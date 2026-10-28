@@ -95,6 +95,51 @@ let
     version = "0.1.0";
     src = "${pkgs.runCommand "source-must-not-build-at-evaluation" { } "exit 99"}/nested";
   };
+  foreign =
+    args:
+    gleam.importProject (
+      {
+        src = ./fixtures/mixed;
+        buildForeign = true;
+      }
+      // args
+    );
+  rejectsForeign = args: !(builtins.tryEval (foreign args).package.drvPath).success;
+  foreignSources =
+    filter:
+    # Model a path literal within each realized flake source, rather than an
+    # opaque store-context string supplied as an already prepared source.
+    /.
+    + builtins.unsafeDiscardStringContext (
+      builtins.path {
+        path = ./fixtures;
+        name = "foreign-consumer";
+        inherit filter;
+      }
+    );
+  originalForeign = foreign {
+    src = foreignSources (_: _: true) + "/mixed";
+  };
+  editedForeign = foreign {
+    src = foreignSources (path: _: path != toString ./fixtures/mixed/src/mixed.gleam) + "/mixed";
+  };
+  orderedForeign =
+    requirements:
+    foreign {
+      manifest = builtins.toFile "foreign-order.toml" ''
+        packages = [
+          { name = "native_math", version = "0.1.0", source = "local", path = "../native_math", build_tools = ["rebar3"], requirements = [], otp_app = "actual_native" },
+          { name = "dev_only", version = "0.1.0", source = "local", path = "../dev_only", build_tools = ["gleam"], requirements = [] },
+          { name = "elixir_math", version = "0.1.0", source = "local", path = "../elixir_math", build_tools = ["mix"], requirements = ${builtins.toJSON requirements} },
+        ]
+      '';
+    };
+  opaqueForeign = foreign {
+    sourceOverrides = {
+      native_math = pkgs.runCommand "foreign-source-must-not-build-at-evaluation" { } "exit 99";
+      elixir_math = "${pkgs.runCommand "mix-source-must-not-build-at-evaluation" { } "exit 99"}/nested";
+    };
+  };
 in
 lib.runTests {
   testOpaqueSourceAvoidsIfd = {
@@ -253,15 +298,24 @@ lib.runTests {
       !(builtins.tryEval (gleam.importProject { src = ./fixtures/mixed; }).package.drvPath).success;
     expected = true;
   };
-  testForeignArgumentsCannotReplaceLockedInputs = {
-    expr =
-      !(builtins.tryEval
-        (gleam.importProject {
-          src = ./fixtures/mixed;
-          buildForeign = true;
-          foreignArgs.native_math.version = "9.9.9";
-        }).package.drvPath
-      ).success;
+  testForeignBuildPreservesLockedEdges = {
+    expr = map (package: package.gleamPackageName) (foreign { }).packages.elixir_math.beamDeps;
+    expected = [ "native_math" ];
+  };
+  testForeignArgumentsCannotReplaceLockedName = {
+    expr = rejectsForeign { foreignArgs.native_math.name = "actual_native"; };
+    expected = true;
+  };
+  testForeignArgumentsCannotReplaceLockedVersion = {
+    expr = rejectsForeign { foreignArgs.native_math.version = "0.1.0"; };
+    expected = true;
+  };
+  testForeignArgumentsCannotReplaceLockedSource = {
+    expr = rejectsForeign { foreignArgs.native_math.src = ./fixtures/native_math; };
+    expected = true;
+  };
+  testForeignArgumentsCannotReplaceLockedDependencies = {
+    expr = rejectsForeign { foreignArgs.native_math.beamDeps = [ ]; };
     expected = true;
   };
   testForeignArgumentsNameLockedPackages = {
@@ -273,6 +327,30 @@ lib.runTests {
           foreignArgs.undeclared = { };
         }).package.drvPath
       ).success;
+    expected = true;
+  };
+  testLocalRebarSourceExcludesConsumerChanges = {
+    expr = originalForeign.packages.native_math.drvPath;
+    expected = editedForeign.packages.native_math.drvPath;
+  };
+  testLocalMixSourceExcludesConsumerChanges = {
+    expr = originalForeign.packages.elixir_math.drvPath;
+    expected = editedForeign.packages.elixir_math.drvPath;
+  };
+  testForeignDependencyOrderingDoesNotChangeCache = {
+    expr =
+      (orderedForeign [
+        "native_math"
+        "dev_only"
+      ]).packages.elixir_math.drvPath;
+    expected =
+      (orderedForeign [
+        "dev_only"
+        "native_math"
+      ]).packages.elixir_math.drvPath;
+  };
+  testOpaqueForeignSourcesAvoidIfd = {
+    expr = (builtins.tryEval opaqueForeign.package.drvPath).success;
     expected = true;
   };
 }

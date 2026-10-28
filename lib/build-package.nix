@@ -6,6 +6,7 @@
   beam,
   linkFarm,
   writeText,
+  cleanSource,
 }:
 lib.makeOverridable (
   {
@@ -36,27 +37,6 @@ lib.makeOverridable (
     applicationMappings = lib.concatMapStringsSep "," (
       package: "${beam.packageName package}=${beam.otpName package}"
     ) dependencies;
-    # Already prepared sources and store-context strings stay opaque at eval time.
-    cleanSource =
-      if !(builtins.isPath src) then
-        src
-      else
-        lib.cleanSourceWith {
-          inherit src;
-          filter =
-            path: type:
-            lib.cleanSourceFilter path type
-            && !(
-              type == "directory"
-              && dirOf path == toString src
-              && builtins.elem (baseNameOf path) [
-                "build"
-                "_build"
-                "node_modules"
-                ".direnv"
-              ]
-            );
-        };
     standardArgs = builtins.removeAttrs args [
       "beamDeps"
       "otpAppName"
@@ -74,7 +54,7 @@ lib.makeOverridable (
       // {
         pname = name;
         inherit version;
-        src = cleanSource;
+        src = cleanSource src;
         nativeBuildInputs = [
           gleam
           erlang

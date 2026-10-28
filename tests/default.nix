@@ -141,6 +141,7 @@ in
       '';
 
   foreign-builds =
+    assert foreign.packages.elixir_math.beamDeps == [ foreign.packages.native_math ];
     pkgs.runCommand "gleam-nix-foreign-builds"
       {
         nativeBuildInputs = [ gleam.beamPackages.elixir ];
