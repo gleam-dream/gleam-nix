@@ -1,0 +1,1 @@
+Local build artifacts must not affect compiled dependency identity.

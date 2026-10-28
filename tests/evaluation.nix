@@ -123,6 +123,9 @@ let
   editedForeign = foreign {
     src = foreignSources (path: _: path != toString ./fixtures/mixed/src/mixed.gleam) + "/mixed";
   };
+  foreignWithoutBuildCache = foreign {
+    src = foreignSources (path: _: path != toString ./fixtures/native_math/_build) + "/mixed";
+  };
   orderedForeign =
     requirements:
     foreign {
@@ -343,6 +346,10 @@ lib.runTests {
   testLocalMixSourceExcludesConsumerChanges = {
     expr = originalForeign.packages.elixir_math.drvPath;
     expected = editedForeign.packages.elixir_math.drvPath;
+  };
+  testLocalForeignBuildArtifactsDoNotChangeCache = {
+    expr = originalForeign.packages.native_math.drvPath;
+    expected = foreignWithoutBuildCache.packages.native_math.drvPath;
   };
   testForeignDependencyOrderingDoesNotChangeCache = {
     expr =
