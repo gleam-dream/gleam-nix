@@ -15,6 +15,17 @@ let
     && builtins.isList (package.build_tools or null)
     && builtins.all builtins.isString package.build_tools;
   names = map (package: package.name) packages;
+  # Hex records every declared requirement of an Erlang or Elixir package,
+  # including optional ones that Gleam never locks (jason lists decimal). They
+  # are not build inputs, so drop edges to unlocked packages. A Gleam package
+  # keeps strict validation: its missing edge means a corrupt manifest.
+  normalized = map (
+    package:
+    if builtins.elem "gleam" package.build_tools then
+      package
+    else
+      package // { requirements = builtins.filter (name: builtins.elem name names) package.requirements; }
+  ) packages;
   duplicates = lib.attrNames (
     lib.filterAttrs (_: values: builtins.length values > 1) (
       lib.groupBy (package: package.name) packages
@@ -25,8 +36,8 @@ let
     map (name: "${package.name} -> ${name}") (
       builtins.filter (name: !(builtins.elem name names)) package.requirements
     )
-  ) packages;
-  selfCycles = builtins.filter (package: builtins.elem package.name package.requirements) packages;
+  ) normalized;
+  selfCycles = builtins.filter (package: builtins.elem package.name package.requirements) normalized;
   ordered = lib.toposort (first: second: builtins.elem first.name second.requirements) packages;
 in
 if !(builtins.isList packages) || !(builtins.all validRecord packages) then
@@ -44,4 +55,4 @@ else if ordered ? cycle then
     lib.concatMapStringsSep " -> " (package: package.name) ordered.cycle
   }."
 else
-  manifest
+  manifest // { packages = normalized; }

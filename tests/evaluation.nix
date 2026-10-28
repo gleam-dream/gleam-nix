@@ -97,6 +97,13 @@ let
   };
 in
 lib.runTests {
+  testForeignPackageDropsRequirementsGleamNeverLocked = {
+    expr = (builtins.head (gleam.readManifest ./manifests/optional.toml).packages).requirements;
+    expected = [
+      "gleam_stdlib"
+      "telemetry"
+    ];
+  };
   testOpaqueSourceAvoidsIfd = {
     expr = (builtins.tryEval opaqueSource.drvPath).success;
     expected = true;

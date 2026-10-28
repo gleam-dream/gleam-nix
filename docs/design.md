@@ -59,6 +59,12 @@ Duplicate locked names, missing edges, and cycles fail evaluation with a
 diagnostic naming the offending packages. The library does not perform version
 resolution or silently repair the manifest.
 
+Hex records every declared requirement of an Erlang or Elixir package,
+including optional ones that Gleam never locks (jason lists decimal). Packages
+without the `gleam` build tool therefore drop edges to unlocked packages; they
+are not build inputs. A Gleam package keeps strict validation, because its
+missing edge means a corrupt manifest.
+
 ### D2: Sources
 
 Hex packages use their manifest version and outer checksum through
