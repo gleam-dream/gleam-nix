@@ -5,6 +5,7 @@ _build/
 .direnv/
 node_modules/
 
-# These fixtures verify that nested source and resource names survive filtering.
+# Track intentional source-filtering fixtures.
 !tests/fixtures/app_a/src/build/
 !tests/fixtures/app_a/priv/build/
+!tests/fixtures/native_math/_build/
