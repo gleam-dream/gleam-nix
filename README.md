@@ -18,7 +18,8 @@ Nix owns local store reuse and sharing through configured binary caches.
 ## Capabilities
 
 - Build locked Hex and local Gleam packages independently.
-- Supply Git sources and foreign build tools through explicit overrides.
+- Supply Git sources through explicit overrides and build Rebar3 and Mix
+  packages with Nixpkgs on request.
 - Compose Rebar3 and Mix outputs through the same BEAM dependency graph.
 - Keep application source and unrelated manifest entries outside dependency inputs.
 
@@ -85,7 +86,11 @@ inputs must match too. Dependency ordering does not affect cache identity.
 
 ## Compose with other builders
 
-Use `packageOverrides` with Nixpkgs' `buildRebar3` or `buildMix`, then adapt the
+Set `buildForeign = true` to build locked Rebar3 and Mix packages with Nixpkgs'
+`buildRebar3` and `buildMix`. Pass per-package builder arguments, such as rebar3
+plugins the sandbox cannot download, through `foreignArgs.<name>`.
+
+For full control, use `packageOverrides` with the same builders, then adapt the
 compiled package with `fromBeamPackage`. Keep one BEAM package set throughout the
 project. Overrides must preserve the locked package identity and dependency edges.
 

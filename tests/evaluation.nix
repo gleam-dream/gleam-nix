@@ -248,4 +248,31 @@ lib.runTests {
     expr = rejects { src = ./fixtures/javascript; };
     expected = true;
   };
+  testForeignBuildsAreOptIn = {
+    expr =
+      !(builtins.tryEval (gleam.importProject { src = ./fixtures/mixed; }).package.drvPath).success;
+    expected = true;
+  };
+  testForeignArgumentsCannotReplaceLockedInputs = {
+    expr =
+      !(builtins.tryEval
+        (gleam.importProject {
+          src = ./fixtures/mixed;
+          buildForeign = true;
+          foreignArgs.native_math.version = "9.9.9";
+        }).package.drvPath
+      ).success;
+    expected = true;
+  };
+  testForeignArgumentsNameLockedPackages = {
+    expr =
+      !(builtins.tryEval
+        (gleam.importProject {
+          src = ./fixtures/mixed;
+          buildForeign = true;
+          foreignArgs.undeclared = { };
+        }).package.drvPath
+      ).success;
+    expected = true;
+  };
 }

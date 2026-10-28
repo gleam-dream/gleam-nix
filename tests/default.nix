@@ -16,6 +16,11 @@ let
     src = ./fixtures/app_a;
     sourceOverrides.shared_lib = ./fixtures/shared_lib_changed;
   };
+  foreign = gleam.importProject {
+    src = ./fixtures/mixed;
+    buildForeign = true;
+    foreignArgs.native_math.postInstall = "touch $out/marker";
+  };
   paths =
     packages:
     pkgs.lib.concatMapStringsSep ":" (package: "${package}/lib/erlang/lib") (
@@ -132,6 +137,23 @@ in
         ERL_LIBS=${pkgs.lib.escapeShellArg (paths [ example.backend ])} erl -noshell -eval '
           {ok, _} = application:ensure_all_started(hello),
           hello:main(), halt(0).'
+        touch "$out"
+      '';
+
+  foreign-builds =
+    pkgs.runCommand "gleam-nix-foreign-builds"
+      {
+        nativeBuildInputs = [ gleam.beamPackages.elixir ];
+      }
+      ''
+        ERL_LIBS=${pkgs.lib.escapeShellArg (paths [ foreign.package ])} elixir -e '
+          23 = :mixed.answer()
+          {:ok, _} = Application.ensure_all_started(:mixed)
+          {:ok, applications} = :application.get_key(:mixed, :applications)
+          true = :actual_native in applications
+        '
+        # foreignArgs reach the Nixpkgs builder.
+        test -f ${foreign.packages.native_math}/marker
         touch "$out"
       '';
 }

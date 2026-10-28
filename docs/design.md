@@ -12,7 +12,8 @@ contains one compiled OTP application and Gleam's compiler metadata. A
 
 The initial compiler target is Erlang. The library does not resolve dependency
 versions, update manifests, replace Gleam's development workflow, or implement
-Rebar3, Mix, npm, release assembly, or cross compilation.
+Rebar3, Mix, npm, release assembly, or cross compilation. It can delegate
+locked Rebar3 and Mix packages to Nixpkgs' builders on request.
 
 Nix owns immutable output storage, build scheduling, and binary-cache access.
 The caller owns the Nixpkgs revision and toolchain selection. Gleam owns source
@@ -30,9 +31,16 @@ selects a consistent Erlang/Elixir package set.
   Use `override` to change builder arguments and `overrideAttrs` for ordinary
   derivation attributes and hooks.
 - `importProject { src; manifest ? src + "/manifest.toml"; sourceOverrides ? {};
-packageOverrides ? final: prev: {}; includeDev ? false; packageArgs ? {}; }`
+packageOverrides ? final: prev: {}; buildForeign ? false; foreignArgs ? {};
+includeDev ? false; packageArgs ? {}; }`
   returns `package`, `packages`, `sources`, and the parsed `manifest`.
   The root source and manifest must be readable during evaluation.
+  With `buildForeign`, a locked package that does not use Gleam builds with
+  Nixpkgs' `buildRebar3` (preferred when offered) or `buildMix`, using its
+  locked source, version, OTP application name and dependency edges.
+  `foreignArgs.<name>` passes further arguments to that builder, such as
+  `buildPlugins`, `nativeBuildInputs` or `patches`. It cannot replace the
+  name, version, source or dependencies, and it must name a locked package.
   `packageArgs` customizes ordinary derivation attributes; it cannot replace
   the root identity, source, dependency graph, target, or development mode.
 - `readManifest path` validates and returns the manifest's package entries.
@@ -83,8 +91,9 @@ Erlang FFI can use `include_lib` for its own generated record headers.
 The selected compiler must support `--no-dev` and application-file generation
 (Gleam 1.19 or newer). A Gleam dependency compiled with another compiler or Erlang
 derivation fails evaluation. The root project must select the Erlang target.
-An unsupported locked build tool fails with guidance to provide a package
-override.
+An unsupported locked build tool fails with guidance to set `buildForeign` or
+to provide a package override. `packageOverrides` still applies after
+`buildForeign` and replaces any package it names.
 
 ### D4: Cache identity
 
@@ -112,8 +121,8 @@ development/test modules and declares its development dependencies.
 
 `beamDeps` retains dependency outputs in the Nix closure. A setup hook adds the
 standard application directory to `ERL_LIBS`. Compiled Rebar3 and Mix packages
-can enter the locked graph through `packageOverrides` and
-`fromBeamPackage`. They must use the caller's selected BEAM package set.
+can enter the locked graph through `buildForeign`, or through
+`packageOverrides` and `fromBeamPackage` for full control. They must use the caller's selected BEAM package set.
 Overrides replace the build method while preserving the locked name, version,
 OTP application name, and resolved direct dependency edges.
 
