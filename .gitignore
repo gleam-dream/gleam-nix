@@ -9,3 +9,5 @@ node_modules/
 !tests/fixtures/app_a/src/build/
 !tests/fixtures/app_a/priv/build/
 !tests/fixtures/native_math/_build/
+tests/fixtures/native_math/_build/*
+!tests/fixtures/native_math/_build/cache.txt
