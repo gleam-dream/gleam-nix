@@ -80,6 +80,11 @@ application name, application directory, and Gleam compiler.
 During compilation, the current package is discoverable under its OTP name so
 Erlang FFI can use `include_lib` for its own generated record headers.
 
+A package that ships Elixir sources next to its Gleam modules needs the Elixir
+compiler on `PATH`: supply it through `nativeBuildInputs` (for a project root,
+`packageArgs.nativeBuildInputs`). Gleam runs `elixir` from the library
+directory and writes there, so the build hands it a writable copy of the
+dependency link farm instead of the read-only store path.
 The selected compiler must support `--no-dev` and application-file generation
 (Gleam 1.19 or newer). A Gleam dependency compiled with another compiler or Erlang
 derivation fails evaluation. The root project must select the Erlang target.

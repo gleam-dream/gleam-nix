@@ -7,6 +7,10 @@ let
   a = gleam.importProject { src = ./fixtures/app_a; };
   b = gleam.importProject { src = ./fixtures/app_b; };
   ownHeaders = gleam.importProject { src = ./fixtures/own_headers; };
+  elixirSources = gleam.importProject {
+    src = ./fixtures/elixir_sources;
+    packageArgs.nativeBuildInputs = [ gleam.beamPackages.elixir ];
+  };
   changed = gleam.importProject { src = ./fixtures/app_a_changed; };
   dev = gleam.importProject {
     src = ./fixtures/app_a;
@@ -88,6 +92,17 @@ in
       }
       ''
         erl -noshell -eval '42 = own_headers:answer(), halt(0).'
+        touch "$out"
+      '';
+
+  elixir-sources =
+    pkgs.runCommand "gleam-nix-elixir-sources"
+      {
+        nativeBuildInputs = [ gleam.erlang ];
+        buildInputs = [ elixirSources.package ];
+      }
+      ''
+        erl -noshell -eval '42 = '"'"'Elixir.ElixirSources'"'"':answer(), halt(0).'
         touch "$out"
       '';
 
