@@ -1,0 +1,9 @@
+name = "app_b"
+version = "0.1.0"
+target = "erlang"
+
+[dependencies]
+shared_lib = { path = "../shared_lib" }
+
+[dev-dependencies]
+dev_only = { path = "../dev_only" }

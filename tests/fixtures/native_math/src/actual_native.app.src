@@ -1,0 +1,6 @@
+{application, actual_native, [
+  {description, "Foreign dependency fixture"},
+  {vsn, "0.1.0"},
+  {applications, [kernel, stdlib]},
+  {modules, []}
+]}.

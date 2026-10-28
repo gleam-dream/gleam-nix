@@ -1,0 +1,11 @@
+# Locked package fixture for graph and cache behavior.
+packages = [
+  { name = "gleam_stdlib", version = "1.0.5", build_tools = ["gleam"], requirements = [], otp_app = "gleam_stdlib", source = "hex", outer_checksum = "CEE5B6C076A85B45F60C585F4316C63EC8B7127C119D5738C3958A9C4D50404E" },
+  { name = "shared_lib", version = "0.1.0", build_tools = ["gleam"], requirements = ["gleam_stdlib"], otp_app = "shared_lib", source = "local", path = "../shared_lib" },
+  { name = "dev_only", version = "0.1.0", build_tools = ["gleam"], requirements = [], otp_app = "dev_only", source = "local", path = "../dev_only" },
+  { name = "unused", version = "0.1.0", build_tools = ["gleam"], requirements = [], otp_app = "unused", source = "local", path = "../unused" },
+]
+
+[requirements]
+shared_lib = { path = "../shared_lib" }
+dev_only = { path = "../dev_only" }

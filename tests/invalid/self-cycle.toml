@@ -1,0 +1,3 @@
+packages = [
+  { name = "shared_lib", version = "0.1.0", source = "local", path = "../shared_lib", build_tools = ["gleam"], requirements = ["shared_lib"] },
+]

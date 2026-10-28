@@ -1,0 +1,4 @@
+# Invalid manifest fixture.
+packages = [
+  { name = "shared_lib", version = "0.1.0", requirements = ["absent"], source = "local", path = "../shared_lib", build_tools = ["gleam"] },
+]

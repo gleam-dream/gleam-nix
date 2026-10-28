@@ -1,0 +1,4 @@
+# Invalid manifest fixture.
+packages = [
+  { name = "bad", version = "0.1.0", source = "hex" },
+]

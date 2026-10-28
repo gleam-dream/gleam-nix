@@ -1,0 +1,9 @@
+# Locked foreign package fixture. Foreign builds enter through package overrides.
+packages = [
+  { name = "native_math", version = "0.1.0", source = "local", path = "../native_math", build_tools = ["rebar3"], requirements = [], otp_app = "actual_native" },
+  { name = "elixir_math", version = "0.1.0", source = "local", path = "../elixir_math", build_tools = ["mix"], requirements = [], otp_app = "elixir_math" },
+]
+
+[requirements]
+native_math = { path = "../native_math" }
+elixir_math = { path = "../elixir_math" }

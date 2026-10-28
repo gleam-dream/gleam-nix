@@ -1,0 +1,7 @@
+name = "mixed"
+version = "0.1.0"
+target = "erlang"
+
+[dependencies]
+native_math = { path = "../native_math" }
+elixir_math = { path = "../elixir_math" }

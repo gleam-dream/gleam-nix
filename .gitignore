@@ -1,0 +1,10 @@
+result
+result-*
+build/
+_build/
+.direnv/
+node_modules/
+
+# These fixtures verify that nested source and resource names survive filtering.
+!tests/fixtures/app_a/src/build/
+!tests/fixtures/app_a/priv/build/
