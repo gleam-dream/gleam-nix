@@ -134,3 +134,5 @@ Run them with:
 ```sh
 nix flake check --no-update-lock-file
 ```
+
+Licensed under [Apache-2.0](LICENSE).
