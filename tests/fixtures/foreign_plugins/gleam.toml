@@ -1,0 +1,6 @@
+name = "foreign_plugins"
+version = "0.1.0"
+target = "erlang"
+
+[dependencies]
+esqlite = "== 0.9.0"

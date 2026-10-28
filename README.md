@@ -101,14 +101,21 @@ backend on asset edits. Compiled Gleam dependencies remain independent either wa
 | Example                                                                                           | Demonstrates                                                                 |
 | ------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
 | [Erlang and Elixir](examples/beam-composition.nix)                                                | Complete Rebar3 and Mix overrides, including distinct OTP application names. |
+| [Native build plugins](examples/foreign-builds.nix)                                               | `buildForeign` with the `pc` port compiler for esqlite's SQLite NIF.         |
 | [Frontend assets](examples/composition.nix)                                                       | `buildNpmPackage`, `importNpmLock` and final asset assembly.                 |
 | [Oversight applications](https://github.com/gleam-dream/oversight/blob/main/nix/applications.nix) | Locked Git adapters and shared native dependencies across real applications. |
 
 ## Operational limits
 
 - The root configuration and manifest must be readable during evaluation. Git
-  dependencies require `sourceOverrides`; foreign build tools require
-  `packageOverrides`.
+  dependencies require `sourceOverrides`.
+- Locked Rebar3 and Mix packages can use `buildForeign = true`, with builder
+  options in `foreignArgs.<name>`. Other foreign build tools need `packageOverrides`.
+- Optional Hex requirements absent from the manifest are dropped for packages
+  without the `gleam` build tool. Missing Gleam requirements remain errors.
+- Gleam packages containing Elixir sources need the selected Elixir compiler in
+  `nativeBuildInputs` (`packageArgs.nativeBuildInputs` for the root). Retain and
+  load Elixir's runtime separately; see the [compilation contract](docs/design.md#d3-package-compilation).
 - Compiled Gleam dependencies must use the same Gleam and Erlang derivations.
   Select alternative toolchains through the scope's `overrideScope`.
 - `includeDev = true` compiles root development/test modules and includes their

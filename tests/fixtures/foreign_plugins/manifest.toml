@@ -1,0 +1,6 @@
+packages = [
+  { name = "esqlite", version = "0.9.0", source = "hex", build_tools = ["rebar3"], requirements = [], otp_app = "esqlite", outer_checksum = "ccf72258a4ee152ec7ad92aa9a03552eb6ca1b06b65c93ad5b6e55c302e05855" },
+]
+
+[requirements]
+esqlite = { version = "== 0.9.0" }
