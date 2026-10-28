@@ -106,12 +106,19 @@ lib.makeOverridable (
             # include_lib resolves the current package by its OTP directory name.
             mkdir -p ${lib.escapeShellArg compileDirectory}/ebin
             export ERL_LIBS="$PWD/compiled''${ERL_LIBS:+:$ERL_LIBS}"
+            # Gleam runs `elixir` from the library directory and writes there
+            # when a package has Elixir sources. Give it a writable copy of the
+            # link farm, outside the source tree that installation copies.
+            gleamLibraries="$TMPDIR/gleam-libraries"
+            mkdir "$gleamLibraries"
+            cp -R ${lib.escapeShellArg (toString libraries)}/. "$gleamLibraries"/
+            chmod u+w "$gleamLibraries"
             gleam compile-package \
               --target erlang \
               ${lib.optionalString (!includeDev) "--no-dev"} \
               --package . \
               --out ${lib.escapeShellArg compileDirectory} \
-              --lib ${lib.escapeShellArg (toString libraries)} \
+              --lib "$gleamLibraries" \
               --otp-app-names ${lib.escapeShellArg applicationMappings}
             runHook postBuild
           '';
