@@ -64,15 +64,17 @@ the library and its runtime dependencies through the setup hooks.
 
 When importing a project, dependency edges come from locked package
 `requirements`. Root edges come from `gleam.toml` dependency names.
-Duplicate locked names, missing edges, and cycles fail evaluation with a
-diagnostic naming the offending packages. The library does not perform version
-resolution or silently repair the manifest.
+Duplicate locked names, missing requirements of Gleam packages, and cycles fail
+evaluation with a diagnostic naming the offending packages. The library does not
+perform version resolution.
 
 Hex records every declared requirement of an Erlang or Elixir package,
 including optional ones that Gleam never locks (jason lists decimal). Packages
-without the `gleam` build tool therefore drop edges to unlocked packages; they
-are not build inputs. A Gleam package keeps strict validation, because its
-missing edge means a corrupt manifest.
+without the `gleam` build tool drop all edges to unlocked packages, regardless
+of source type. The manifest does not identify which requirements are optional,
+so this also drops missing required foreign dependencies. A stale or incomplete
+foreign graph can therefore pass validation. A Gleam package keeps strict
+validation, because its missing edge means a corrupt manifest.
 
 ### D2: Sources
 

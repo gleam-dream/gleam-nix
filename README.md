@@ -111,8 +111,9 @@ backend on asset edits. Compiled Gleam dependencies remain independent either wa
   dependencies require `sourceOverrides`.
 - Locked Rebar3 and Mix packages can use `buildForeign = true`, with builder
   options in `foreignArgs.<name>`. Other foreign build tools need `packageOverrides`.
-- Optional Hex requirements absent from the manifest are dropped for packages
-  without the `gleam` build tool. Missing Gleam requirements remain errors.
+- Non-Gleam packages drop all requirements absent from the manifest, for any
+  source type, including optional Hex dependencies. Missing required foreign
+  edges can pass validation. Missing Gleam requirements remain errors.
 - Gleam packages containing Elixir sources need the selected Elixir compiler in
   `nativeBuildInputs` (`packageArgs.nativeBuildInputs` for the root). Retain and
   load Elixir's runtime separately; see the [compilation contract](docs/design.md#d3-package-compilation).
