@@ -85,6 +85,14 @@ compiler on `PATH`: supply it through `nativeBuildInputs` (for a project root,
 `packageArgs.nativeBuildInputs`). Gleam runs `elixir` from the library
 directory and writes there, so the build hands it a writable copy of the
 dependency link farm instead of the read-only store path.
+
+The compiler input does not retain or load Elixir's runtime for consumers.
+The caller retains the selected `beamPackages.elixir` in its runtime environment
+or through the package's `propagatedBuildInputs` (for a project root,
+`packageArgs.propagatedBuildInputs`). A bare Erlang launcher adds
+`${elixir}/lib/elixir/lib` to `ERL_LIBS` and starts the `elixir` application
+before calling Elixir modules. Use the same BEAM package set as the build.
+
 The selected compiler must support `--no-dev` and application-file generation
 (Gleam 1.19 or newer). A Gleam dependency compiled with another compiler or Erlang
 derivation fails evaluation. The root project must select the Erlang target.

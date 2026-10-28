@@ -7,9 +7,13 @@ let
   a = gleam.importProject { src = ./fixtures/app_a; };
   b = gleam.importProject { src = ./fixtures/app_b; };
   ownHeaders = gleam.importProject { src = ./fixtures/own_headers; };
+  elixir = gleam.beamPackages.elixir;
   elixirSources = gleam.importProject {
     src = ./fixtures/elixir_sources;
-    packageArgs.nativeBuildInputs = [ gleam.beamPackages.elixir ];
+    packageArgs = {
+      nativeBuildInputs = [ elixir ];
+      propagatedBuildInputs = [ elixir ];
+    };
   };
   changed = gleam.importProject { src = ./fixtures/app_a_changed; };
   dev = gleam.importProject {
@@ -28,6 +32,7 @@ let
   failures = import ./evaluation.nix { inherit pkgs gleam; };
   example = import ../examples/composition.nix { inherit pkgs gleam; };
   closure = pkgs.closureInfo { rootPaths = [ b.package ]; };
+  elixirSourcesClosure = pkgs.closureInfo { rootPaths = [ elixirSources.package ]; };
   formatSources = pkgs.lib.fileset.toSource {
     root = ../.;
     fileset = pkgs.lib.fileset.fileFilter (file: file.hasExt "nix") ../.;
@@ -102,7 +107,11 @@ in
         buildInputs = [ elixirSources.package ];
       }
       ''
-        erl -noshell -eval '42 = '"'"'Elixir.ElixirSources'"'"':answer(), halt(0).'
+        ERL_LIBS=${pkgs.lib.escapeShellArg "${elixir}/lib/elixir/lib"}''${ERL_LIBS:+:$ERL_LIBS} erl -noshell -eval '
+          {ok, _} = application:ensure_all_started(elixir),
+          {ok, _} = application:ensure_all_started(elixir_sources),
+          42 = elixir_sources:answer(), halt(0).'
+        grep -Fx ${elixir} ${elixirSourcesClosure}/store-paths
         touch "$out"
       '';
 

@@ -1,3 +1,3 @@
 defmodule ElixirSources do
-  def answer, do: 42
+  def answer, do: Enum.sum([20, 22])
 end
