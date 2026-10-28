@@ -29,6 +29,10 @@ let
     buildForeign = true;
     foreignArgs.native_math.postInstall = "touch $out/marker";
   };
+  foreignPlugins = import ../examples/foreign-builds.nix {
+    inherit pkgs;
+    src = ./fixtures/foreign_plugins;
+  };
   paths =
     packages:
     pkgs.lib.concatMapStringsSep ":" (package: "${package}/lib/erlang/lib") (
@@ -179,6 +183,26 @@ in
         '
         # foreignArgs reach the Nixpkgs builder.
         test -f ${foreign.packages.native_math}/marker
+        touch "$out"
+      '';
+
+  foreign-plugins =
+    pkgs.runCommand "gleam-nix-foreign-plugins"
+      {
+        nativeBuildInputs = [ gleam.erlang ];
+        buildInputs = [ foreignPlugins.package ];
+      }
+      ''
+        erl -noshell -eval '
+          {ok, _} = application:ensure_all_started(foreign_plugins),
+          {ok, Connection} = esqlite3:open(":memory:"),
+          try
+            [[42]] = esqlite3:q(Connection, "select 42")
+          after
+            ok = esqlite3:close(Connection)
+          end,
+          foreign_plugins:main(),
+          halt(0).'
         touch "$out"
       '';
 }

@@ -39,8 +39,9 @@ includeDev ? false; packageArgs ? {}; }`
   Nixpkgs' `buildRebar3` (preferred when offered) or `buildMix`, using its
   locked source, version, OTP application name and dependency edges.
   `foreignArgs.<name>` passes further arguments to that builder, such as
-  `buildPlugins`, `nativeBuildInputs` or `patches`. It cannot replace the
-  name, version, source or dependencies, and it must name a locked package.
+  `buildPlugins`, `nativeBuildInputs` or `patches`. The reserved arguments
+  `name`, `version`, `src` and `beamDeps` cannot be replaced. An undeclared
+  package name in `foreignArgs` fails evaluation.
   `packageArgs` customizes ordinary derivation attributes; it cannot replace
   the root identity, source, dependency graph, target, or development mode.
 - `readManifest path` validates and returns the manifest's package entries.
@@ -95,8 +96,9 @@ During compilation, the current package is discoverable under its OTP name so
 Erlang FFI can use `include_lib` for its own generated record headers.
 
 A package that ships Elixir sources next to its Gleam modules needs the Elixir
-compiler on `PATH`: supply it through `nativeBuildInputs` (for a project root,
-`packageArgs.nativeBuildInputs`). Gleam runs `elixir` from the library
+compiler on `PATH`. Supply the selected `beamPackages.elixir` through
+`nativeBuildInputs`, or `packageArgs.nativeBuildInputs` for a project root.
+Gleam runs `elixir` from the library
 directory and writes there, so the build hands it a writable copy of the
 dependency link farm instead of the read-only store path.
 
@@ -141,9 +143,16 @@ development/test modules and declares its development dependencies.
 `beamDeps` retains dependency outputs in the Nix closure. A setup hook adds the
 standard application directory to `ERL_LIBS`. Compiled Rebar3 and Mix packages
 can enter the locked graph through `buildForeign`, or through
-`packageOverrides` and `fromBeamPackage` for full control. They must use the caller's selected BEAM package set.
+`packageOverrides` and `fromBeamPackage` for full control. They must use the
+caller's selected BEAM package set.
 Overrides replace the build method while preserving the locked name, version,
 OTP application name, and resolved direct dependency edges.
+
+Build-time Rebar3 plugins belong in `foreignArgs.<name>.buildPlugins` and must
+come from the same BEAM package set. For example, esqlite's SQLite NIF needs
+`foreignArgs.esqlite.buildPlugins = [ pkgs.beamPackages.pc ];` when using the
+default scope. The [foreign-build recipe](../examples/foreign-builds.nix) supplies
+this plugin before the sandbox build; Rebar3 cannot download it there.
 
 The compiler library directory includes the transitive dependency closure.
 Conflicting outputs or aliases with the same package name or OTP application
@@ -165,8 +174,10 @@ package. A Gleam JavaScript compiler backend is outside this initial scope.
 
 `lib/manifest.nix` owns graph validation. `lib/import-project.nix` owns source
 selection and graph construction. `lib/build-package.nix` owns compilation and
-the BEAM output contract. `lib/beam.nix` owns dependency closure and compatibility
-checks. `lib/default.nix` binds these functions to the caller's package set.
+the BEAM output contract. `lib/clean-source.nix` owns local source filtering for
+Gleam and delegated foreign builds. `lib/beam.nix` owns dependency closure and
+compatibility checks. `lib/default.nix` binds these functions to the caller's
+package set.
 
 ## Research and decisions
 
