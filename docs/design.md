@@ -77,6 +77,8 @@ A Gleam package compiles with `gleam compile-package`, the selected Erlang
 toolchain, and previously compiled dependencies. It preserves compiler metadata
 beside BEAM bytecode. Package outputs expose their direct `beamDeps`, OTP
 application name, application directory, and Gleam compiler.
+During compilation, the current package is discoverable under its OTP name so
+Erlang FFI can use `include_lib` for its own generated record headers.
 
 The selected compiler must support `--no-dev` and application-file generation
 (Gleam 1.19 or newer). A Gleam dependency compiled with another compiler or Erlang

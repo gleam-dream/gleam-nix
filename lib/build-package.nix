@@ -32,6 +32,7 @@ lib.makeOverridable (
       }) dependencies
     );
     appDirectory = "lib/erlang/lib/${applicationName}-${version}";
+    compileDirectory = "compiled/${applicationName}";
     applicationMappings = lib.concatMapStringsSep "," (
       package: "${beam.packageName package}=${beam.otpName package}"
     ) dependencies;
@@ -102,11 +103,14 @@ lib.makeOverridable (
         buildPhase =
           args.buildPhase or ''
             runHook preBuild
+            # include_lib resolves the current package by its OTP directory name.
+            mkdir -p ${lib.escapeShellArg compileDirectory}/ebin
+            export ERL_LIBS="$PWD/compiled''${ERL_LIBS:+:$ERL_LIBS}"
             gleam compile-package \
               --target erlang \
               ${lib.optionalString (!includeDev) "--no-dev"} \
               --package . \
-              --out compiled \
+              --out ${lib.escapeShellArg compileDirectory} \
               --lib ${lib.escapeShellArg (toString libraries)} \
               --otp-app-names ${lib.escapeShellArg applicationMappings}
             runHook postBuild
@@ -115,10 +119,10 @@ lib.makeOverridable (
         installPhase =
           args.installPhase or ''
             runHook preInstall
-            test -f compiled/ebin/${lib.escapeShellArg applicationName}.app
+            test -f ${lib.escapeShellArg compileDirectory}/ebin/${lib.escapeShellArg applicationName}.app
             mkdir -p "$out"/${lib.escapeShellArg appDirectory} "$out/src"
             # Gleam links priv/include to the build tree; materialize those links.
-            cp -RL compiled/. "$out"/${lib.escapeShellArg appDirectory}/
+            cp -RL ${lib.escapeShellArg compileDirectory}/. "$out"/${lib.escapeShellArg appDirectory}/
             # Match Nixpkgs' BEAM convention: retain patched source without outputs.
             for entry in .[^.]* *; do
               if [ -e "$entry" ] && [ "$entry" != compiled ]; then

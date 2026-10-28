@@ -6,6 +6,7 @@
 let
   a = gleam.importProject { src = ./fixtures/app_a; };
   b = gleam.importProject { src = ./fixtures/app_b; };
+  ownHeaders = gleam.importProject { src = ./fixtures/own_headers; };
   changed = gleam.importProject { src = ./fixtures/app_a_changed; };
   dev = gleam.importProject {
     src = ./fixtures/app_a;
@@ -78,6 +79,17 @@ in
       '';
 
   beam-composition = import ./composition.nix { inherit pkgs gleam; };
+
+  own-headers =
+    pkgs.runCommand "gleam-nix-own-headers"
+      {
+        nativeBuildInputs = [ gleam.erlang ];
+        buildInputs = [ ownHeaders.package ];
+      }
+      ''
+        erl -noshell -eval '42 = own_headers:answer(), halt(0).'
+        touch "$out"
+      '';
 
   quickstart =
     pkgs.runCommand "gleam-nix-quickstart"
