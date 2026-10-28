@@ -1,0 +1,6 @@
+# Hex records optional requirements (jason lists decimal) that Gleam never locks.
+packages = [
+  { name = "decimal_user", version = "1.0.0", requirements = ["decimal", "gleam_stdlib", "telemetry"], build_tools = ["mix"], source = "hex", outer_checksum = "00" },
+  { name = "gleam_stdlib", version = "1.0.0", requirements = [], build_tools = ["gleam"], source = "hex", outer_checksum = "00" },
+  { name = "telemetry", version = "1.0.0", requirements = [], build_tools = ["rebar3"], source = "hex", outer_checksum = "00" },
+]
