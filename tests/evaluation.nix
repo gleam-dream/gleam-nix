@@ -336,6 +336,10 @@ lib.runTests {
     expr = originalForeign.packages.native_math.drvPath;
     expected = editedForeign.packages.native_math.drvPath;
   };
+  testForeignConsumerEditChangesApplication = {
+    expr = originalForeign.package.drvPath != editedForeign.package.drvPath;
+    expected = true;
+  };
   testLocalMixSourceExcludesConsumerChanges = {
     expr = originalForeign.packages.elixir_math.drvPath;
     expected = editedForeign.packages.elixir_math.drvPath;
