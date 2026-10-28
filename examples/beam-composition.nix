@@ -3,7 +3,7 @@ let
   inherit (gleam) beamPackages;
   project = gleam.importProject {
     inherit src;
-    packageOverrides = _final: _prev: {
+    packageOverrides = final: _prev: {
       native_math = gleam.fromBeamPackage {
         pname = "native_math";
         version = "0.1.0";
@@ -21,6 +21,7 @@ let
           name = "elixir_math";
           version = "0.1.0";
           src = project.sources.elixir_math;
+          beamDeps = [ final.native_math ];
         };
       };
     };

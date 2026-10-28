@@ -4,6 +4,7 @@
   beamPackages,
   readManifest,
   buildGleamPackage,
+  cleanSource,
 }:
 {
   src,
@@ -79,8 +80,8 @@ let
           {
             name = otpName;
             inherit (package) version;
-            src = sources.${name};
-            beamDeps = map (dependency: final.${dependency}) package.requirements;
+            src = cleanSource sources.${name};
+            beamDeps = beam.sortPackages (map (dependency: final.${dependency}) package.requirements);
           }
           // foreignArgs.${name} or { }
         )).overrideAttrs

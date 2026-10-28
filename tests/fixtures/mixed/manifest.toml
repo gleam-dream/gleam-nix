@@ -1,7 +1,7 @@
-# Locked foreign package fixture. Foreign builds enter through package overrides.
+# Locked foreign package fixture for delegated builds and explicit overrides.
 packages = [
   { name = "native_math", version = "0.1.0", source = "local", path = "../native_math", build_tools = ["rebar3"], requirements = [], otp_app = "actual_native" },
-  { name = "elixir_math", version = "0.1.0", source = "local", path = "../elixir_math", build_tools = ["mix"], requirements = [], otp_app = "elixir_math" },
+  { name = "elixir_math", version = "0.1.0", source = "local", path = "../elixir_math", build_tools = ["mix"], requirements = ["native_math"], otp_app = "elixir_math" },
 ]
 
 [requirements]
