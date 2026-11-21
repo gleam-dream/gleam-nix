@@ -1,0 +1,284 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+#
+# Review policy for gleam-nix, derived by the coderabbit-config skill.
+# Each instruction names the skill it comes from; `policy` is the review policy
+# of coderabbit-config itself, and `repository` marks a rule beyond the catalog.
+#
+# Catalogs read:
+#   practice catalog (not public)  879841a61c3f83cd809edca9229c4a6bb7f909f8
+#   gleam-agent-tools              6a9ea2f647e787a32d3c7fa88d9c58c5b81ae9d7
+#     (no skill from it governs this repository: the library is Nix code;
+#     the Gleam, Erlang and Elixir files are test and example fixtures)
+#
+# Governing skills: coderabbit-config (policy), design, testing, gate,
+# writing, git, all from the practice catalog.
+#
+# Governing dependency versions: none with a version-ranged rule. Pinned in
+# flake.lock: nixpkgs nixpkgs-unstable d3b13ad75cc4. The caller selects the
+# Nixpkgs revision and the Gleam compiler (1.19 or newer, docs/design.md D3).
+language: en-US
+tone_instructions: >-
+  Literal and concise. Report only defects you can evidence from the diff, its
+  callers, docs/design.md, or a cited rule. One finding per cause. An empty
+  review is valid.
+early_access: false
+
+reviews:
+  profile: chill
+  request_changes_workflow: false
+  high_level_summary: true
+  high_level_summary_instructions: |
+    Lead with the problem the change solves, then the response in one short
+    paragraph, then its effect on the public interface or an invariant of
+    docs/design.md (D1 to D6), if any. Do not narrate the diff file by file.
+  review_status: true
+  commit_status: true
+  fail_commit_status: true
+  collapse_walkthrough: true
+  changed_files_summary: false
+  sequence_diagrams: false
+  estimate_code_review_effort: false
+  assess_linked_issues: true
+  related_issues: true
+  related_prs: false
+  suggested_labels: false
+  suggested_reviewers: false
+  auto_assign_reviewers: false
+  poem: false
+  in_progress_fortune: false
+  enable_prompt_for_ai_agents: true
+
+  auto_review:
+    enabled: true
+    drafts: false
+    auto_incremental_review: true
+    base_branches:
+      - main
+
+  # Lock files written by tools. The Gleam manifests under examples/ and
+  # tests/ are hand-kept inputs of the examples and tests, so they stay
+  # reviewed.
+  path_filters:
+    - "!flake.lock"
+    - "!examples/assets/package-lock.json"
+
+  path_instructions:
+    - path: "{default.nix,flake.nix,lib/**,examples/**/*.nix}"
+      instructions: |
+        Review policy (policy).
+        - Design first. AGENTS.md names docs/design.md as the public API and
+          invariants; docs/COVERAGE.md maps each part to its section (D1
+          locked graph, D2 sources, D3 package compilation, D4 cache
+          identity, D5 development code, D6 composition). Flag code that
+          contradicts that section's interface or invariants, and a change to
+          designed behavior with no change to docs/design.md. A fix that
+          restores designed behavior needs none. When code and design
+          disagree, the design changes first.
+        - In particular, flag a dependency derivation that depends on the
+          consuming project's source, its full manifest or unrelated locked
+          packages (D4), an evaluation that reads a fetched package source or
+          needs import from derivation (D2), version resolution or manifest
+          writing (D1), and development code compiled for a dependency (D5).
+        - Core abstractions. Flag a second representation of a concept the
+          design names (locked package, package output, project, the package
+          scope), a name that differs from those terms, logic placed outside
+          the file the "Implementation boundaries" section assigns it (graph
+          validation in lib/manifest.nix, source selection in
+          lib/import-project.nix, compilation in lib/build-package.nix,
+          source filtering in lib/clean-source.nix, closure and compatibility
+          in lib/beam.nix), and a caller that sets package metadata by hand
+          instead of through the builders or `fromBeamPackage` (D6).
+        - Lean. Flag code no test, caller or design rule needs: an unset
+          argument, an unvaried parameter, a wrapper that adds no rule, an
+          unreachable branch. Say what to delete.
+        - Migration, never a legacy path. Flag a compatibility shim, a
+          fallback to an old argument or output layout, a deprecated alias,
+          and a flag that keeps old behavior. Callers outside this
+          repository use the public interface, so a change to it is declared
+          breaking in the pull request with a migration note.
+        - Composable. At the public interface, flag hidden call ordering,
+          global state, an argument that only works after another is set, a
+          builder that drops `override`, `overrideAttrs` or `overrideScope`,
+          and a function with two responsibilities.
+        - Test first. Flag a behavior change with no check in tests/ that
+          exercises it, and a new refusal with no case in
+          tests/evaluation.nix.
+        - Typed before foreign. Flag a manifest value that reaches graph
+          construction without the validation of `readManifest`, shell in a
+          build phase that makes a decision Nix evaluation can make, and a
+          routine invalid input that fails without a diagnostic naming the
+          offending packages (D1).
+        - Silence. Report nothing that `nixfmt` or
+          `nix flake check --no-update-lock-file` decides, and no layout or
+          naming preference without a written rule.
+
+    - path: "docs/**"
+      instructions: |
+        Design (design; policy). docs/design.md is a single Markdown design,
+        not a Typst design layer; hold it to these rules.
+        - Fresh reader. The reviewer never saw the change being made. Flag a
+          changed section that does not tell a reader with no memory what the
+          code does not say, and a section that copies the code.
+        - Flag content the code states beyond the public interface: internal
+          attribute names, build-phase commands, file lists outside
+          "Implementation boundaries", limits. The functions and arguments a
+          caller passes are the interface of this library and belong here.
+        - Flag session narration, progress notes, status or delivery history.
+        - Flag a concept defined in a second home (README.md restating a rule
+          differently from docs/design.md), a term with two meanings, and a
+          retired term reused.
+        - Flag a renamed or renumbered invariant heading (D1 to D6) whose
+          meaning did not change; docs/COVERAGE.md and README.md link to
+          those anchors.
+        - Flag a new part with no row in docs/COVERAGE.md, and a row whose
+          status is not captured, standard or out-of-scope with its owner or
+          reason.
+        - Flag a changed reason in "Research and decisions" that drops the
+          earlier reason without saying what superseded it.
+
+    - path: "{README.md,SECURITY.md,docs/**/*.md}"
+      instructions: |
+        Prose (writing).
+        - Flag a metaphor, idiom or figure of speech; name the concept. An
+          established technical term is a name, not a metaphor.
+        - Flag one concept under two terms, a project term not defined where
+          it first appears, and an "it" or "this" with two possible
+          referents.
+        - Flag a sentence holding two propositions, and background placed
+          after the finding that depends on it.
+        - Flag a caveat that names no decision the reader makes, filler, and
+          value judgments.
+        - Flag a plan label such as "Phase 1" in lasting text.
+        - Flag a claim wider than what a test or example shows.
+
+    - path: "tests/**"
+      instructions: |
+        Tests (testing).
+        - Flag a check that confirms behavior through internals where the
+          public interface can show it: build with `importProject` or
+          `buildGleamPackage` and inspect the package output, compare
+          derivation paths for cache identity (D4), run the compiled
+          application for composition (D6).
+        - Flag a refusal or illegal input the change introduces (a cycle, a
+          duplicate, an undeclared override, a mismatched compiler) with no
+          case in tests/evaluation.nix through the public interface.
+        - Flag an assertion that a fixture's outcome holds that no section
+          of docs/design.md states.
+        - Flag a fixture or check left in place for an interface the diff
+          replaced, and a fixture no check uses.
+
+    - path: "{flake.nix,tests/default.nix}"
+      instructions: |
+        Gate (gate). `nix flake check` is the whole gate: formatting,
+        evaluation failures, compilation, composition and cache identity.
+        - Flag a check that passes or skips when its tool is missing; it
+          fails or reports unmeasured.
+        - Flag a tool not supplied through the flake.
+        - Flag a gate that keeps the formatting check but loses evaluation,
+          compilation or composition checks, and a formatting check that
+          stops covering the Nix files of examples/.
+        - Flag a new check that encodes a layout, naming or README
+          convention, and a check that scripts what a tool already performs.
+        - Flag a replaced check that drops a cache-identity or
+          data-integrity assertion.
+
+  pre_merge_checks:
+    title:
+      mode: "off"
+    description:
+      mode: warning
+    issue_assessment:
+      mode: "off"
+    docstrings:
+      mode: "off"
+    custom_checks:
+      - name: No weakened test or gate
+        mode: error
+        instructions: |
+          Source: policy, gate. Fail if the diff skips, deletes, disables or
+          loosens a check in tests/ or the `checks` output of flake.nix
+          (including removing a case from tests/evaluation.nix, a fixture
+          from tests/fixtures or tests/invalid that a check uses, a system
+          from `systems`, or narrowing the files the formatting check
+          covers), and the pull request description does not name the
+          behavior that no longer exists or the stronger check that replaces
+          it. Pass otherwise.
+      - name: Behavior change carries its design
+        mode: warning
+        instructions: |
+          Source: policy, design. Warn if the diff changes public behavior or
+          an invariant in lib/, default.nix or flake.nix with no change to
+          docs/design.md, and the pull request description does not say the
+          change restores designed behavior or preserves behavior. Pass for
+          tests, examples and documentation-only changes.
+      - name: Breaking change is declared
+        mode: warning
+        instructions: |
+          Source: policy. Warn if the diff removes or renames a function of
+          the package scope (`buildGleamPackage`, `importProject`,
+          `readManifest`, `fromBeamPackage`, `lib.mkLib`), one of their
+          arguments or returned attributes, or a flake output, or changes the
+          package output layout, and the pull request description does not
+          call the change breaking and give its migration. Pass otherwise.
+      - name: Problem-first description
+        mode: warning
+        instructions: |
+          Source: git. Warn unless the pull request description gives the
+          problem, why it matters, one concrete example, the solution in one
+          paragraph, its trade-offs, and what was verified, with no file
+          tour, and its claims match the diff.
+      - name: No attribution text
+        mode: warning
+        instructions: |
+          Source: git, gate. Warn if the pull request title or description
+          contains a co-author credit, `Co-Authored-By`, `Signed-off-by`, a
+          "Generated with" or "Generated by" line, or a line starting with
+          the robot emoji.
+
+  finishing_touches:
+    docstrings:
+      enabled: false
+    unit_tests:
+      enabled: false
+    simplify:
+      enabled: false
+
+  tools:
+    gitleaks:
+      enabled: true
+    trufflehog:
+      enabled: true
+    # The repository runs only nixfmt; JavaScript, Markdown, prose and YAML
+    # linter findings would be preferences without a written rule (policy,
+    # Silence).
+    biome:
+      enabled: false
+    eslint:
+      enabled: false
+    oxc:
+      enabled: false
+    markdownlint:
+      enabled: false
+    languagetool:
+      enabled: false
+    vale:
+      enabled: false
+    yamllint:
+      enabled: false
+    github-checks:
+      enabled: true
+
+chat:
+  auto_reply: true
+
+knowledge_base:
+  code_guidelines:
+    enabled: true
+    # AGENTS.md and CLAUDE.md are read by default.
+    filePatterns:
+      - files: "docs/design.md,docs/COVERAGE.md"
+        applyTo: "default.nix,flake.nix,lib/**,examples/**,tests/**"
+  learnings:
+    scope: local
+  pull_requests:
+    scope: local
