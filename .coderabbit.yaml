@@ -5,17 +5,16 @@
 # of coderabbit-config itself, and `repository` marks a rule beyond the catalog.
 #
 # Catalogs read:
-#   practice catalog (not public)  879841a61c3f83cd809edca9229c4a6bb7f909f8
-#   gleam-agent-tools              6a9ea2f647e787a32d3c7fa88d9c58c5b81ae9d7
+#   practice catalog (not public)  a56636a4eed7a0d644b89f5bb7c7d7c9692e0887
+#   gleam-agent-tools              d7b541cb885b3edbf25563b06aee97b28b66074f
 #     (no skill from it governs this repository: the library is Nix code;
 #     the Gleam, Erlang and Elixir files are test and example fixtures)
 #
 # Governing skills: coderabbit-config (policy), design, testing, gate,
 # writing, git, all from the practice catalog.
 #
-# Governing dependency versions: none with a version-ranged rule. Pinned in
-# flake.lock: nixpkgs nixpkgs-unstable d3b13ad75cc4. The caller selects the
-# Nixpkgs revision and the Gleam compiler (1.19 or newer, docs/design.md D3).
+# The caller selects the Nixpkgs revision and the Gleam compiler
+# (docs/design.md D3).
 language: en-US
 tone_instructions: >-
   Literal and concise. Report only defects you can evidence from the diff, its
