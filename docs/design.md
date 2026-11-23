@@ -451,7 +451,8 @@ workingDir ? "/home/<user>"; contents ? []; assets ? null; tag ? null; labels
   production root's source leaves `test/` and `dev/` out
   ([D4](#d4-cache-identity)).
 - **`buildImage`.** The image carries a runtime contract: a non-root user, CA
-  certificates, a shell and an HTTP client for the health check, and an
+  certificates at the system paths Erlang reads (it never reads
+  `SSL_CERT_FILE`), a shell and an HTTP client for the health check, and an
   entrypoint. Its closure, binaries included, holds no untrimmed Erlang.
 
 **Verification.** A fixture release that depends on a removed application
@@ -460,7 +461,9 @@ the original Erlang path, and an image given the original Erlang fails it. A
 boot-and-health check reads the image's configuration, starts its entrypoint
 with its environment, and runs its own health check until it passes. The
 sandbox has no container runtime, so the check runs the image's processes
-without its filesystem.
+without its filesystem. A trust-store check unpacks the image's layers into a
+root filesystem and runs the image's Erlang inside it, which must find CA
+certificates.
 
 ### D11: JavaScript packages
 
