@@ -4,6 +4,7 @@
   perl,
   busybox,
   beam,
+  cleanSource,
   warningsGate,
 }:
 # A release of the project's dependency outputs and a production compile of its
@@ -13,7 +14,18 @@
   runtime,
 }:
 let
-  root = warningsGate "its release" project.package;
+  # Gleam's package compiler compiles Erlang files under test/ even without
+  # development code, so the release compiles a source without test/.
+  productionSource = lib.cleanSourceWith {
+    src = cleanSource project.src;
+    filter = path: type: !(type == "directory" && path == toString (project.src + "/test"));
+  };
+  root = warningsGate "its release" (
+    if builtins.pathExists (project.src + "/test") then
+      project.package.override { src = productionSource; }
+    else
+      project.package
+  );
   app = root.otpAppName;
   packageName = root.gleamPackageName;
   testsErlang = root.erlangCompiler;

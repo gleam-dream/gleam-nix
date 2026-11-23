@@ -431,7 +431,9 @@ labels ? {}; env ? {}; }` builds an OCI image with Nixpkgs' `dockerTools`.
 - **`buildRelease`.** The production compile passes the same warnings gate as
   the tests. References to the original Erlang are rewritten to the runtime.
   No application in the service's `.app` dependency closure needs a removed
-  application, and no development module ships.
+  application, and no development module ships. Gleam's package compiler
+  compiles Erlang files under `test/` even without development code, so the
+  release compiles the root from its source without `test/`.
 - **`buildImage`.** The image carries a runtime contract: a non-root user, CA
   certificates, a shell and an HTTP client for the health check, and an
   entrypoint. Its closure, binaries included, holds no untrimmed Erlang.

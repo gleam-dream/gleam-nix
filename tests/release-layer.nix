@@ -9,6 +9,10 @@ let
     includeDev = true;
   };
   runtime = gleam.trimErlang { without = [ "wx" ]; };
+  testedRelease = gleam.buildRelease {
+    project = gleam.importProject { src = ./fixtures/tested; };
+    inherit runtime;
+  };
   release = gleam.buildRelease {
     project = served;
     inherit runtime;
@@ -98,6 +102,15 @@ in
     project = gleam.importProject { src = ./fixtures/needs_wx; };
     inherit runtime;
   }) [ "gleam-nix: needs_wx needs wx, which the runtime removed." ];
+
+  # Gleam's package compiler still compiles Erlang files under test/ without
+  # development code; the release compiles a source without test/.
+  release-without-test-code = pkgs.runCommand "gleam-nix-release-without-test-code" { } ''
+    test -e ${testedRelease}/lib/tested-0.1.0/ebin/tested.beam
+    test ! -e ${testedRelease}/lib/tested-0.1.0/ebin/beta_test.beam
+    test ! -e ${testedRelease}/lib/tested-0.1.0/ebin/tested@alpha_test.beam
+    touch "$out"
+  '';
 
   release-boots =
     pkgs.runCommand "gleam-nix-release-boots"
