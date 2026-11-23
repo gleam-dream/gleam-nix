@@ -113,7 +113,8 @@ selects a consistent Erlang/Elixir package set.
 - `importProject { src; manifest ? src + "/manifest.toml"; sourceOverrides ? {};
 packageOverrides ? final: prev: {}; buildForeign ? false; foreignArgs ? {};
 includeDev ? false; packageArgs ? {}; }`
-  returns `package`, `packages`, `sources`, and the parsed `manifest`.
+  returns `package`, `packages`, `sources`, the root `src`, and the parsed
+  `manifest`.
   The root source and manifest must be readable during evaluation.
   With `buildForeign`, a locked package that does not use Gleam builds with
   Nixpkgs' `buildRebar3` (preferred when offered) or `buildMix`, using its
@@ -279,10 +280,16 @@ output as assets beside the compiled BEAM package.
 
 ### D7: Test checks
 
-**Interface.** `mkTestCheck { project; inputs ? <default fileset>; runner ?
-<default runner>; services ? []; vmFlags ? []; ... }` returns one check. The
-check compiles the root with `includeDev` against the project's cached
-dependency outputs, gates warnings, then hands the compiled tree to its runner.
+**Interface.** `mkTestCheck { project; inputs ? <default fileset>; extraInputs ?
+[]; runner ? testRunners.default; services ? []; vmFlags ? []; env ? {}; }`
+returns one check. `project` is an `importProject` result with `includeDev =
+true`; any other fails evaluation. The check compiles the root with its
+development code against the project's cached dependency outputs, gates
+warnings, then hands the compiled tree to its runner. Its output holds `report`,
+one line per test module: the module, `passed` or `failed`, its test count and
+its milliseconds. `extraInputs` adds paths outside the default fileset.
+`mkCoverageCheck { checks; name ? "coverage"; }` is the derived coverage check.
+The test layer supports Gleam 1.19.
 
 **Invariants.**
 
@@ -319,14 +326,18 @@ checks, not an adopter's.
 
 ### D8: Runners
 
-**Interface.** A runner is a value a check takes. It receives the compiled tree
-and the check's environment, runs tests, and reports each test module it ran
-with its time. Two runners ship.
+**Interface.** A runner is a value `{ name; run; }` a check takes. `run`
+receives the root's OTP application and test module and returns the shell that
+runs the tests from a copy of the root's source. Each test module it runs
+reaches the report through an eunit listener the check installs. Two runners
+ship.
 
-- The **default runner** runs the package's own test `main`, exactly as
-  `gleam test` does.
-- The **shard runner** runs one shard's modules, and takes a `setup` hook, a
-  shard count and optional pins of a module to a shard.
+- The **default runner**, `testRunners.default`, runs the package's own test
+  `main`, exactly as `gleam test` does.
+- The **shard runner**, `testRunners.shard { index; count; setup ? null; pins ?
+{}; }`, runs one shard's modules. `setup` names a Gleam function as
+  `module.function`; `pins` maps a module to a shard. `testRunners.shards {
+count; setup; pins; }` lists every shard's runner.
 
 **Invariants.**
 
@@ -338,7 +349,12 @@ with its time. Two runners ship.
   a copy of the root's source, because gleeunit discovers `test/` relative to
   the working directory. Setup an adopter does in its test `main` therefore
   runs in CI too. An eunit listener reports each module and its time, which
-  gleeunit's own output does not name.
+  gleeunit's own output does not name. The check attaches it through eunit's
+  `EUNIT` environment variable, which eunit appends to every run's options and
+  whose listeners it awaits before returning, so gleeunit runs unchanged.
+- **Panics.** gleeunit reports a panicking test with its location and fails the
+  run. A panic outside a test, in a test `main` or a `setup` hook, prints
+  Gleam's runtime error with its stack trace.
 - **Sharding is a second runner, not a mode.** The shard runner runs a shard's
   modules through eunit with gleeunit's options, which it copies; those options
   are a brittle surface with a fixture, and gleeunit is asked upstream for an
@@ -352,15 +368,21 @@ with its time. Two runners ship.
 **Verification.** One fixture whose test `main` does setup runs under both
 runners, with the shard runner's `setup` hook doing the same work, and both
 report the same modules with the same verdicts. A fixture with a panicking
-test shows the stack trace and a failing exit status under each runner.
+test shows its location and a failing exit status under each runner, and a
+panic in its test `main` and in a `setup` hook shows the stack trace.
 
 ### D9: Services
 
-**Interface.** A service is a value `{ start; stop; env; }`. It takes an init
-hook (for example roles and databases), environment aliases, and a package
-parameter. A check takes a list of services. PostgreSQL ships first, built on
-Nixpkgs' `postgresqlTestHook` where that fits, with the PostgreSQL package
-chosen by the adopter.
+**Interface.** A service is a value `{ name; nativeBuildInputs; start; stop;
+log; env; }`. The check runs `start` and `stop` with `$SERVICE_STATE` and
+`$SERVICE_PORT` set, and expands each `env` value as a shell word after start.
+A check takes a list of services. PostgreSQL ships first:
+`testServices.postgresql { package ? postgresql; name ? "postgresql"; init ?
+""; env ? <PGHOST, PGPORT, PGUSER>; aliases ? {}; }`, where `init` is SQL the
+superuser runs (for example roles and databases) and `aliases` adds names such
+as a connection URL. It runs `initdb` and `pg_ctl` itself, the commands
+Nixpkgs' `postgresqlTestHook` runs, because the hook fixes one port and data
+directory per derivation.
 
 **Invariants.**
 
@@ -537,6 +559,8 @@ Gleam and delegated foreign builds. `lib/beam.nix` owns dependency closure and
 compatibility checks. `lib/default.nix` binds these functions to the caller's
 package set.
 
+`lib/git-sources.nix` owns Git sources. `lib/test/` owns test checks, runners,
+services and coverage, with the Erlang modules its runners load.
 Each new module owns one concern and depends only on the package layer's
 public interface: Git sources, test checks with their runners, services, the
 release and image, and the JavaScript entry point. The CI layer sits apart from

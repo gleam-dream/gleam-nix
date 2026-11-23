@@ -11,4 +11,11 @@ pkgs.lib.makeScope pkgs.newScope (self: {
   importProject = self.callPackage ./import-project.nix { };
   gitSources = self.callPackage ./git-sources.nix { };
   fromBeamPackage = self.beam.fromBeamPackage;
+
+  # Test layer (D7 to D9).
+  testSupport = self.callPackage ./test/support.nix { };
+  testRunners = self.callPackage ./test/runners.nix { };
+  testServices = self.callPackage ./test/services.nix { };
+  mkTestCheck = self.callPackage ./test/check.nix { };
+  mkCoverageCheck = self.callPackage ./test/coverage.nix { };
 })

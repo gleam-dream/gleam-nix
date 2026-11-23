@@ -17,13 +17,10 @@ Nix owns local store reuse and sharing through configured binary caches.
 
 ## Scope
 
-Today the library builds packages. Its [design](docs/design.md) also accepts
-four more modules on the same package graph. They aren't built yet:
+The library builds packages and [test checks](#test-a-project) on Linux. Its
+[design](docs/design.md) also accepts three more modules on the same package
+graph. They aren't built yet:
 
-- **Test checks** compile a project's tests against its cached dependencies,
-  treat Gleam and Erlang warnings as errors, and run them through a replaceable
-  runner: the package's own test `main` by default, or shards. Checks can start
-  services such as PostgreSQL.
 - **Release and image** assemble a release and an OCI image from the dependency
   outputs and compiler the tests used. This layer is unstable.
 - **JavaScript** builds and tests a Gleam frontend as a separate entry point.
@@ -120,6 +117,58 @@ Evaluation fetches nothing and needs no Git credentials. A Git entry missing
 from the registry fails evaluation with its name, repository and commit. Get a
 GitHub hash with `nix flake prefetch github:owner/library/<commit>`.
 
+## Test a project
+
+A test check compiles the root with its test code against the same cached
+dependency outputs as the release, fails on any Gleam or Erlang warning in the
+root, and runs the tests in the Nix sandbox. A failing check leaves nothing in
+the store; its log is the build log.
+
+```nix
+let
+  project = gleam.importProject {
+    src = ./.;
+    includeDev = true;
+  };
+  database = gleam.testServices.postgresql {
+    package = pkgs.postgresql_17;
+    init = "create role app login; create database app_test owner app;";
+    aliases.DATABASE_URL = "postgresql://app@127.0.0.1:$SERVICE_PORT/app_test";
+  };
+  shards = map (
+    runner:
+    gleam.mkTestCheck {
+      inherit project runner;
+      services = [ database ];
+    }
+  ) (gleam.testRunners.shards { count = 4; setup = "my_app_test.setup"; });
+in
+{
+  tests = gleam.mkTestCheck { inherit project; services = [ database ]; };
+  coverage = gleam.mkCoverageCheck { checks = shards; };
+}
+```
+
+- **Runners.** The default runner calls your `my_app_test.main()`, exactly as
+  `gleam test` does, from a copy of your source. The shard runner splits the
+  test modules by a hash of their names, so adding a module moves no other;
+  setup from your test `main` moves into its `setup` function, and `pins`
+  places a module in a chosen shard. All shards share one compile.
+- **Inputs.** A check's source is the app's directory and its local
+  dependencies, without build directories, `AGENTS.md` or `CLAUDE.md`. Add
+  shared files with `extraInputs`.
+- **Services** start with a fresh port and state directory per check, so each
+  shard has its own database. Two services, or a service and the check, that
+  set the same variable fail evaluation. A failing check prints each service's
+  log.
+- **Results.** Each check writes `report`, one line per test module with its
+  verdict, test count and milliseconds. The coverage check fails naming any
+  module that ran in no check or in several.
+- **Sandbox.** Every VM a check starts loads a CA bundle.
+
+The test layer supports Gleam 1.19 and gleeunit; another compiler version fails
+evaluation until the library's checks have pinned its output.
+
 ## How caching works
 
 Each Gleam package compiles against its resolved dependencies with
@@ -174,10 +223,9 @@ backend on asset edits. Compiled Gleam dependencies remain independent either wa
 - Compiled Gleam dependencies must use the same Gleam and Erlang derivations.
   Select alternative toolchains through the scope's `overrideScope`.
 - `includeDev = true` compiles root development/test modules and includes their
-  dependencies. Until the test module ships, run your test runner separately to
-  execute them.
-- Flake outputs cover x86-64 Linux, ARM64 Linux and ARM64 macOS. The designed
-  test checks and images are Linux only. Cross compilation stays outside this
+  dependencies; `mkTestCheck` runs them.
+- Flake outputs cover x86-64 Linux, ARM64 Linux and ARM64 macOS. Test checks
+  and the designed images are Linux only. Cross compilation stays outside this
   library, and JavaScript compilation and release assembly wait on their
   modules.
 

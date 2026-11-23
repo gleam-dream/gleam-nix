@@ -182,6 +182,6 @@ else if reservedArgs != [ ] then
 else
   builtins.seq locked {
     manifest = locked;
-    inherit packages sources;
+    inherit packages sources src;
     package = root;
   }

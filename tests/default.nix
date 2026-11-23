@@ -54,7 +54,10 @@ let
     fileset = pkgs.lib.fileset.fileFilter (file: file.hasExt "nix") ../.;
   };
 in
-{
+pkgs.lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux (
+  import ./test-layer.nix { inherit pkgs gleam; }
+)
+// {
   formatting =
     pkgs.runCommand "gleam-nix-formatting"
       {
