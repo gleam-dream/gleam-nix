@@ -416,13 +416,17 @@ checked derivative of the Erlang the tests ran on.
 
 **Interface.**
 
-- `trimErlang { without; }` copies the cached Erlang and removes the listed OTP
-  applications.
+- `trimErlang { without; }` copies the scope's cached Erlang and removes the
+  listed OTP applications. It keeps the original as `original`.
 - `buildRelease { project; runtime; }` assembles a release from the project's
   dependency outputs and a production compile of the root, on the given
-  runtime.
-- `buildImage { release; name; port; health; user; assets ? null; }` builds an
-  OCI image with Nixpkgs' `dockerTools`.
+  runtime. `project` is imported without `includeDev`, and `runtime` is the
+  project's Erlang or a trim of it. `bin/<package>` starts the root through
+  Gleam's own entry module, as `gleam run` does.
+- `buildImage { release; name; port; health; user; assets ? null; tag ? null;
+labels ? {}; env ? {}; }` builds an OCI image with Nixpkgs' `dockerTools`.
+  `user` runs as UID 1000, `PORT` and `SSL_CERT_FILE` are set, and `assets`
+  is named by `ASSETS_DIR`.
 
 **Invariants.** Each assertion lives in the step that can break it.
 
@@ -439,8 +443,11 @@ checked derivative of the Erlang the tests ran on.
 
 **Verification.** A fixture release that depends on a removed application
 fails `buildRelease`. The image check scans the closure, binaries included, for
-the original Erlang path. A boot-and-health check starts the image and waits
-for its health endpoint.
+the original Erlang path, and an image given the original Erlang fails it. A
+boot-and-health check reads the image's configuration, starts its entrypoint
+with its environment, and runs its own health check until it passes. The
+sandbox has no container runtime, so the check runs the image's processes
+without its filesystem.
 
 ### D11: JavaScript packages
 
@@ -559,8 +566,11 @@ Gleam and delegated foreign builds. `lib/beam.nix` owns dependency closure and
 compatibility checks. `lib/default.nix` binds these functions to the caller's
 package set.
 
-`lib/git-sources.nix` owns Git sources. `lib/test/` owns test checks, runners,
-services and coverage, with the Erlang modules its runners load.
+`lib/git-sources.nix` owns Git sources. `lib/warnings-gate.nix` owns the
+warnings gate that the test check and the release share, and
+`lib/gleam-main.erl` the entry module both start through. `lib/test/` owns test
+checks, runners, services and coverage, with the Erlang modules its runners
+load. `lib/release/` owns the trimmed runtime, the release and the image.
 Each new module owns one concern and depends only on the package layer's
 public interface: Git sources, test checks with their runners, services, the
 release and image, and the JavaScript entry point. The CI layer sits apart from

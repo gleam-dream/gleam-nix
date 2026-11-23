@@ -3,6 +3,7 @@
   stdenvNoCC,
   writeText,
   cacert,
+  warningsGate,
   testSupport,
   testRunners,
 }:
@@ -104,64 +105,33 @@ let
   appDir = root.beamAppDir;
   # The root compiled with its development code under the warnings gate. Every
   # runner of this project and input set shares this derivation.
-  compiled = (root.override { src = source; }).overrideAttrs (previous: {
-    pname = "${previous.pname}-test";
-    inherit sourceRoot;
-    nativeBuildInputs = previous.nativeBuildInputs ++ [ support ];
-    buildPhase = ''
-      # Gleam's package compiler has no warnings-as-errors flag. It compiles
-      # only this package, so every warning it prints is the root's own.
-      gleamNixCompileLog="$TMPDIR/gleam-nix-compile.log"
-      exec 3>&2 2> >(tee "$gleamNixCompileLog" >&3)
-      gleamNixTee=$!
-      ${previous.buildPhase}
-      exec 2>&3 3>&-
-      wait "$gleamNixTee"
-      if grep -q '^warning: ' "$gleamNixCompileLog"; then
-        echo "gleam-nix: Gleam warnings in ${packageName} fail its test check." >&2
-        exit 1
-      fi
-      gleamNixErlang=()
-      for gleamNixDirectory in src test; do
-        if [ -d "$gleamNixDirectory" ]; then
-          while IFS= read -r -d "" gleamNixFile; do
-            gleamNixErlang+=("$gleamNixFile")
-          done < <(find "$gleamNixDirectory" -type f -name '*.erl' -print0)
-        fi
-      done
-      if [ "''${#gleamNixErlang[@]}" -gt 0 ]; then
-        gleamNixIncludes=()
-        for gleamNixDirectory in compiled/${app}/include include src; do
-          if [ -d "$gleamNixDirectory" ]; then gleamNixIncludes+=(-I "$gleamNixDirectory"); fi
-        done
-        mkdir -p "$TMPDIR/gleam-nix-erlc"
-        if ! erlc -Werror -o "$TMPDIR/gleam-nix-erlc" -pa compiled/${app}/ebin "''${gleamNixIncludes[@]}" "''${gleamNixErlang[@]}"; then
-          echo "gleam-nix: Erlang warnings in ${packageName} fail its test check." >&2
-          exit 1
-        fi
-      fi
-    '';
-    postInstall = (previous.postInstall or "") + ''
-      # The expected test modules come from the sources, never from a runner.
-      gleamNixModules=()
-      if [ -d test ]; then
-        while IFS= read -r gleamNixFile; do
-          case "$gleamNixFile" in
-            *.gleam)
-              gleamNixModule="''${gleamNixFile#test/}"
-              gleamNixModule="''${gleamNixModule%.gleam}"
-              gleamNixModules+=("''${gleamNixModule//\//@}")
-              ;;
-            *.erl) gleamNixModules+=("$(basename "$gleamNixFile" .erl)") ;;
-          esac
-        done < <(find test -type f \( -name '*.gleam' -o -name '*.erl' \) | LC_ALL=C sort)
-      fi
-      mkdir -p "$out/nix-support"
-      erl -noshell -pa ${support}/ebin -eval 'gleam_nix_test:discover(init:get_plain_arguments()).' \
-        -extra "$out"/${lib.escapeShellArg appDir}/ebin "''${gleamNixModules[@]}" \
-        > "$out/nix-support/gleam-nix-test-modules"
-    '';
-  });
+  compiled =
+    (warningsGate "its test check" (root.override { src = source; })).overrideAttrs
+      (previous: {
+        pname = "${previous.pname}-test";
+        inherit sourceRoot;
+        nativeBuildInputs = previous.nativeBuildInputs ++ [ support ];
+        postInstall = (previous.postInstall or "") + ''
+          # The expected test modules come from the sources, never from a runner.
+          gleamNixModules=()
+          if [ -d test ]; then
+            while IFS= read -r gleamNixFile; do
+              case "$gleamNixFile" in
+                *.gleam)
+                  gleamNixModule="''${gleamNixFile#test/}"
+                  gleamNixModule="''${gleamNixModule%.gleam}"
+                  gleamNixModules+=("''${gleamNixModule//\//@}")
+                  ;;
+                *.erl) gleamNixModules+=("$(basename "$gleamNixFile" .erl)") ;;
+              esac
+            done < <(find test -type f \( -name '*.gleam' -o -name '*.erl' \) | LC_ALL=C sort)
+          fi
+          mkdir -p "$out/nix-support"
+          erl -noshell -pa ${support}/ebin -eval 'gleam_nix_test:discover(init:get_plain_arguments()).' \
+            -extra "$out"/${lib.escapeShellArg appDir}/ebin "''${gleamNixModules[@]}" \
+            > "$out/nix-support/gleam-nix-test-modules"
+        '';
+      });
   testModules = "${compiled}/nix-support/gleam-nix-test-modules";
 
   serviceNames = map (service: service.name) services;

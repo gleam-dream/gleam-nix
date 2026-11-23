@@ -4,7 +4,7 @@ erlang:
 runCommand "gleam-nix-test-support"
   {
     nativeBuildInputs = [ erlang ];
-    passthru.main = ./gleam-main.erl;
+    passthru.main = ../gleam-main.erl;
   }
   ''
     mkdir -p "$out/ebin"

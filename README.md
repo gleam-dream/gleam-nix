@@ -17,12 +17,11 @@ Nix owns local store reuse and sharing through configured binary caches.
 
 ## Scope
 
-The library builds packages and [test checks](#test-a-project) on Linux. Its
-[design](docs/design.md) also accepts three more modules on the same package
-graph. They aren't built yet:
+The library builds packages, [test checks](#test-a-project), and a
+[release and image](#ship-an-image) on Linux. The release and image layer is
+unstable. Its [design](docs/design.md) also accepts two more modules on the
+same package graph. They aren't built yet:
 
-- **Release and image** assemble a release and an OCI image from the dependency
-  outputs and compiler the tests used. This layer is unstable.
 - **JavaScript** builds and tests a Gleam frontend as a separate entry point.
   This entry point is unstable.
 - **CI** is three vendor-neutral commands, `plan`, `build` and `verify`, so a
@@ -169,6 +168,40 @@ in
 The test layer supports Gleam 1.19 and gleeunit; another compiler version fails
 evaluation until the library's checks have pinned its output.
 
+## Ship an image
+
+What ships is what was tested. The release uses the test checks' dependency
+outputs and compiler, compiles the root again without its test code under the
+same warnings gate, and runs on a copy of the tests' Erlang with unused OTP
+applications removed. Nothing is rebuilt. This layer is unstable: it may change
+without a major version until a second user adopts it.
+
+```nix
+let
+  runtime = gleam.trimErlang { without = [ "wx" "observer" "debugger" "et" ]; };
+  release = gleam.buildRelease {
+    project = gleam.importProject { src = ./.; };
+    inherit runtime;
+  };
+in
+gleam.buildImage {
+  inherit release;
+  name = "my-service";
+  port = 8080;
+  health = "/health";
+  user = "app";
+}
+```
+
+- `buildRelease` fails if any application the service starts needs one the
+  runtime removed, naming both, and if a test module would ship.
+  `bin/my_app` starts the root's `main` as `gleam run` does.
+- `buildImage` adds a non-root user, CA certificates, BusyBox for a shell and
+  the health check's HTTP client, and an entrypoint. It fails if any file in
+  its closure, binaries included, still names the untrimmed Erlang.
+- The image reads `PORT`; pass a frontend's output as `assets` and read its
+  path from `ASSETS_DIR`.
+
 ## How caching works
 
 Each Gleam package compiles against its resolved dependencies with
@@ -224,10 +257,9 @@ backend on asset edits. Compiled Gleam dependencies remain independent either wa
   Select alternative toolchains through the scope's `overrideScope`.
 - `includeDev = true` compiles root development/test modules and includes their
   dependencies; `mkTestCheck` runs them.
-- Flake outputs cover x86-64 Linux, ARM64 Linux and ARM64 macOS. Test checks
-  and the designed images are Linux only. Cross compilation stays outside this
-  library, and JavaScript compilation and release assembly wait on their
-  modules.
+- Flake outputs cover x86-64 Linux, ARM64 Linux and ARM64 macOS. Test checks,
+  releases and images are Linux only. Cross compilation stays outside this
+  library, and JavaScript compilation waits on its module.
 
 ## Examples and reference
 

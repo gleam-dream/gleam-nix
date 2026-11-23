@@ -9,6 +9,7 @@ pkgs.lib.makeScope pkgs.newScope (self: {
   readManifest = self.callPackage ./manifest.nix { };
   buildGleamPackage = self.callPackage ./build-package.nix { };
   importProject = self.callPackage ./import-project.nix { };
+  warningsGate = self.callPackage ./warnings-gate.nix { };
   gitSources = self.callPackage ./git-sources.nix { };
   fromBeamPackage = self.beam.fromBeamPackage;
 
@@ -18,4 +19,9 @@ pkgs.lib.makeScope pkgs.newScope (self: {
   testServices = self.callPackage ./test/services.nix { };
   mkTestCheck = self.callPackage ./test/check.nix { };
   mkCoverageCheck = self.callPackage ./test/coverage.nix { };
+
+  # Release and image (D10). Unstable.
+  trimErlang = self.callPackage ./release/trim-erlang.nix { };
+  buildRelease = self.callPackage ./release/release.nix { };
+  buildImage = self.callPackage ./release/image.nix { };
 })

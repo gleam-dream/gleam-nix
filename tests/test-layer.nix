@@ -364,7 +364,7 @@ in
         cp -R ${./fixtures/main_pin} main_pin
         chmod -R u+w main_pin
         (cd main_pin && gleam run > /dev/null)
-        tail -n +3 ${../lib/test/gleam-main.erl} | sed 's/__GLEAM_APP__/main_pin/g' > expected
+        tail -n +3 ${../lib/gleam-main.erl} | sed 's/__GLEAM_APP__/main_pin/g' > expected
         diff expected main_pin/build/dev/erlang/main_pin/_gleam_artefacts/main_pin@@main.erl
 
         options() { tr -d ' \n' | grep -o '\[verbose,no_tty,[^]]*\]'; }
