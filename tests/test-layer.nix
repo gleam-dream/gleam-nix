@@ -232,6 +232,8 @@ in
     touch "$out"
   '';
 
+  test-shard-1 = builtins.elemAt sharded 0;
+  test-shard-2 = builtins.elemAt sharded 1;
   test-coverage = gleam.mkCoverageCheck { checks = sharded; };
   test-coverage-missing =
     failsWith "test-coverage-missing"

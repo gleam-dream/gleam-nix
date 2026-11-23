@@ -489,6 +489,18 @@ the external jobs that planning gates.
 - `verify` substitutes every declared check with local builds forbidden, then
   builds the derived checks locally from them.
 
+`lib.ci pkgs` returns `{ version; commands; adapters; declare;
+externalMarker; }`. `declare { adapter; checks ? {}; always ? {}; derived ?
+{}; external ? {}; }` makes the declaration; job names are its attribute names,
+distinct across groups, and `shared` is reserved. The commands are one program:
+`gleam-nix-ci plan DECLARATION [--out FILE]`, `gleam-nix-ci build DECLARATION
+(--check NAME | --external NAME | --shared PLAN)` and `gleam-nix-ci verify
+DECLARATION`, where `DECLARATION` is a flake reference such as
+`.#ci.x86_64-linux`. A plan is JSON: `cached`, `missing` with each reason,
+`stages` (`shared`, when two missing checks need one build, then `checks`),
+`external`, `errors` and `seconds`. `externalMarker { name; inputs; }` is the
+result an external job pushes when it passes.
+
 An optional reusable workflow runs `plan`, then each stage, then `verify`, and
 publishes the image from `main` through a command the adopter supplies. It
 takes adapters and checks by name, because a reusable workflow accepts only
@@ -511,21 +523,37 @@ instead.
   says so rather than hide it.
 - **Observable.** Each run reports why each check missed, push failures as a
   count, and the time per check and per module.
-- **Only the gap.** The commands build only what existing tools leave, such as
-  turning checks into a matrix or skipping cached builds. What that gap is gets
-  settled before the commands are written.
+- **Only the gap.** The commands build only what existing tools leave.
+  nix-eval-jobs evaluates the checks and reports each one's cache status and
+  the builds it still needs; `nix build` builds; the adapter pushes.
+  nix-fast-build skips cached builds and pushes, but on one machine, and
+  nix-github-actions turns checks into a matrix without knowing what is cached.
+  The gap, and the commands' whole job, is turning cache status into stages of
+  only the missing checks with a reason per miss, verifying every declared
+  result with local builds forbidden while naming the job that owed it, and the
+  adapters' declared scopes.
 
 **Verification.** A fixture declaration with a compile shared by two shards
 plans them in two stages. `verify` against a cache missing one check fails
 naming that check and its job. The cache-status query of the evaluator is a
-brittle surface with a fixture.
+brittle surface with a fixture: output recorded from nix-eval-jobs 2.35.4, which
+the commands replay through stubs of `nix` and the evaluator, and a check that
+fails when the bundled evaluator is another version. This repository's own
+workflow runs the commands through the reusable workflow with the run-local
+adapter.
 
 ### D13: Cache adapters and trust
 
 **Interface.** A cache adapter is a value: a substituter, a push command, a
 query, and `setup` and `teardown` run in each `plan`, `build` and `verify` job.
 Each adapter declares who can read and who can write its entries, globally or
-per ref. The library ships adapters for the GitHub Actions cache, Cachix and
+per ref. Concretely it is a derivation holding `adapter.json` (name,
+substituter, public key, scope) and `bin/setup`, `bin/push` and `bin/teardown`;
+`setup` exits 0 when the run can push and 3 when it can only read. The query is
+the evaluator's cache-status query against the adapter's substituter.
+`adapters.cachix { name; publicKey; }`, `adapters.attic { server; cache;
+publicKey; }` and `adapters.local` ship, and `adapters.mkAdapter` builds a
+private one. The library ships adapters for the GitHub Actions cache, Cachix and
 Attic, and a store local to the run, carried between jobs as workflow
 artifacts. It ships no default; the adopter chooses. An adopter's private
 adapter lives outside this repository and has the same shape.
@@ -581,7 +609,8 @@ warnings gate that the test check and the release share, and
 `lib/gleam-main.erl` the entry module both start through. `lib/test/` owns test
 checks, runners, services and coverage, with the Erlang modules its runners
 load. `lib/release/` owns the trimmed runtime, the release and the image.
-`lib/javascript.nix` owns the JavaScript entry point.
+`lib/javascript.nix` owns the JavaScript entry point. `ci/` owns the CI layer:
+the commands, the adapters, the declaration, and `.github/workflows/ci.yml`.
 Each new module owns one concern and depends only on the package layer's
 public interface: Git sources, test checks with their runners, services, the
 release and image, and the JavaScript entry point. The CI layer sits apart from
@@ -671,7 +700,5 @@ defines the per-ref scope that the GitHub Actions adapter declares.
   per job. A spike decides it, measuring query counts, throttling, bytes stored
   against the repository's cache allowance, and whether a fork's entries behave
   as documented.
-- **Which gap existing CI tools leave.** Settled before the CI commands are
-  written; the likely gap is `verify`, its diagnostics, and stages.
 - **Whether hash sharding is fast enough.** Time per module, recorded from the
   first adoption, tells. The fallback is the shard count or pinning a module.

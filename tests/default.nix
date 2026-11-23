@@ -59,6 +59,10 @@ pkgs.lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux (
   // import ./release-layer.nix { inherit pkgs gleam; }
   // import ./javascript-layer.nix { inherit pkgs gleam; }
 )
+// import ./ci-layer.nix {
+  inherit pkgs;
+  ci = import ../ci { inherit pkgs; };
+}
 // {
   formatting =
     pkgs.runCommand "gleam-nix-formatting"

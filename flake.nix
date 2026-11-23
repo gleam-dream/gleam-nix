@@ -18,9 +18,40 @@
         inherit nixpkgs;
         gleam-nix.lib.mkLib = mkLib;
       };
+      # The README's whole service setup, evaluated by the checks.
+      service = (import ./examples/service/flake.nix).outputs {
+        self = service;
+        inherit nixpkgs;
+        gleam-nix.lib = {
+          inherit mkLib;
+          ci = pkgs: import ./ci { inherit pkgs; };
+        };
+      };
     in
     {
-      lib = { inherit mkLib; };
+      lib = {
+        inherit mkLib;
+        # The CI layer, apart from the Gleam scope and versioned on its own.
+        ci = pkgs: import ./ci { inherit pkgs; };
+      };
+      # This repository's own CI declaration: two shards sharing a compile, the
+      # default runner, and coverage derived from the shards.
+      ci = nixpkgs.lib.genAttrs [ "x86_64-linux" "aarch64-linux" ] (
+        system:
+        let
+          checks = self.checks.${system};
+          ci = import ./ci { pkgs = nixpkgs.legacyPackages.${system}; };
+        in
+        ci.declare {
+          adapter = ci.adapters.local;
+          checks = {
+            inherit (checks) test-shard-1 test-shard-2 test-runner-default;
+          };
+          derived = {
+            inherit (checks) test-coverage;
+          };
+        }
+      );
       checks = forSystems (
         system:
         let
@@ -30,6 +61,17 @@
           inherit pkgs;
           gleam = mkLib pkgs;
           exampleShell = quickstart.devShells.${system}.default;
+        }
+        // nixpkgs.lib.optionalAttrs (system == "x86_64-linux") {
+          # Every declared result of the README's service evaluates.
+          service-example =
+            let
+              declaration = service.ci.${system};
+              results = declaration.checks // declaration.derived;
+            in
+            pkgs.writeText "gleam-nix-service-example" (
+              builtins.concatStringsSep "\n" (map (check: check.drvPath) (builtins.attrValues results))
+            );
         }
       );
       packages = forSystems (
@@ -42,6 +84,7 @@
           };
         in
         {
+          ci = (import ./ci { inherit pkgs; }).commands;
           default = example.backend;
           frontend = example.assets;
           combined = example.combined;
