@@ -62,8 +62,8 @@ let
     inherit name tag;
     contents = imageContents;
     fakeRootCommands = ''
-      mkdir -p .${home} .${workingDir} tmp
-      chown ${owner} .${home} .${workingDir}
+      mkdir -p ${lib.escapeShellArg ".${home}"} ${lib.escapeShellArg ".${workingDir}"} tmp
+      chown ${owner} ${lib.escapeShellArg ".${home}"} ${lib.escapeShellArg ".${workingDir}"}
       chmod 1777 tmp
     '';
     config = {

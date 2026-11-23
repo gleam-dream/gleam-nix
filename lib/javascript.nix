@@ -37,13 +37,20 @@ let
       }
     else
       throw "gleam-nix: buildJavascriptPackage needs sourceOverrides.${package.name} for its ${package.source} source.";
-  # Local packages stay at their locked paths; Gleam accepts them without
+  # Local packages compile from their locked paths; Gleam accepts them without
   # resolving again when it finds the fingerprint of each one's gleam.toml.
-  local = builtins.filter (
-    package: package.source == "local" && !(sourceOverrides ? ${package.name})
-  ) locked.packages;
-  downloaded = builtins.filter (package: !(builtins.elem package local)) locked.packages;
-  outsideSource = builtins.filter (package: lib.hasPrefix "../" package.path) local;
+  # A local package outside src, or one an override replaces, is staged there.
+  local = builtins.filter (package: package.source == "local") locked.packages;
+  downloaded = builtins.filter (package: package.source != "local") locked.packages;
+  staged = builtins.filter (
+    package: lib.hasPrefix "../" package.path || sourceOverrides ? ${package.name}
+  ) local;
+  localSource =
+    package:
+    if sourceOverrides ? ${package.name} then
+      sourceOverrides.${package.name}
+    else
+      src + "/${package.path}";
   # Gleam's index of downloaded packages, as `gleam deps download` writes it.
   index = lib.concatStrings (
     [ "[packages]\n" ]
@@ -55,16 +62,15 @@ let
       builtins.filter (package: package.source == "git") downloaded
     )
   );
-  # Development packages and the root's test modules stay out of the output.
-  testModules = lib.optionals (builtins.pathExists (src + "/test")) (
-    map
-      (file: lib.removeSuffix ".gleam" (lib.removePrefix "${toString (src + "/test")}/" (toString file)))
-      (
-        builtins.filter (file: lib.hasSuffix ".gleam" (toString file)) (
-          lib.filesystem.listFilesRecursive (src + "/test")
-        )
-      )
+  # Development packages and the root's test code stay out of the output: its
+  # Gleam test modules, and the native modules Gleam copies from test/.
+  testFiles = lib.optionals (builtins.pathExists (src + "/test")) (
+    map (file: lib.removePrefix "${toString (src + "/test")}/" (toString file)) (
+      lib.filesystem.listFilesRecursive (src + "/test")
+    )
   );
+  testModules = map (lib.removeSuffix ".gleam") (builtins.filter (lib.hasSuffix ".gleam") testFiles);
+  nativeTestFiles = builtins.filter (file: !(lib.hasSuffix ".gleam" file)) testFiles;
   # The packages the frontend needs at run time: its dependencies and theirs,
   # through the locked requirements. Every other locked package, such as a
   # development dependency and what only it needs, stays out of the output.
@@ -107,10 +113,11 @@ else
       postUnpack =
         (args.postUnpack or "")
         + lib.concatMapStrings (package: ''
+          rm -rf "$sourceRoot/${package.path}"
           mkdir -p "$(dirname "$sourceRoot/${package.path}")"
-          cp -R ${src + "/${package.path}"} "$sourceRoot/${package.path}"
+          cp -R ${localSource package} "$sourceRoot/${package.path}"
           chmod -R u+w "$sourceRoot/${package.path}"
-        '') outsideSource;
+        '') staged;
 
       buildPhase =
         args.buildPhase or ''
@@ -157,6 +164,9 @@ else
             artefact=''${module//\//@}
             rm -f "$out/${config.name}/$module.mjs" "$out/${config.name}/$module.d.mts" \
               "$out/${config.name}/_gleam_artefacts/$artefact".cache*
+          done
+          for file in ${lib.escapeShellArgs nativeTestFiles}; do
+            rm -f "$out/${config.name}/$file"
           done
           find "$out/${config.name}" -maxdepth 1 -name '*@@*' -delete
           runHook postInstall

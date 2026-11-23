@@ -87,13 +87,14 @@ else
       ${lib.concatStrings (
         lib.mapAttrsToList (name: source: ''
           rootPriv="$out/lib/${app}-${root.version}/priv"
+          privName=${lib.escapeShellArg name}
           mkdir -p "$rootPriv"
-          if [ -e "$rootPriv/${name}" ]; then
-            echo "gleam-nix: priv/${name} already exists in ${packageName}." >&2
+          if [ -e "$rootPriv/$privName" ]; then
+            echo "gleam-nix: priv/$privName already exists in ${packageName}." >&2
             exit 1
           fi
-          cp -RL ${source} "$rootPriv/${name}"
-          chmod -R u+w "$rootPriv/${name}"
+          cp -RL ${source} "$rootPriv/$privName"
+          chmod -R u+w "$rootPriv/$privName"
         '') priv
       )}
 

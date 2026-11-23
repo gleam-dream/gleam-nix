@@ -126,6 +126,8 @@ in
           project = served;
           inherit runtime;
           priv.web = web;
+          # Names reach the shell literally.
+          priv."two words $HOME" = web;
         };
         name = "contracted";
         port = 8080;
@@ -133,7 +135,7 @@ in
         user = "service";
         uid = 10001;
         gid = 10001;
-        workingDir = "/app";
+        workingDir = "/srv/my app";
         contents = [ pkgs.hello ];
       };
     in
@@ -148,12 +150,14 @@ in
         config=image/$(jq -r '.[0].Config' image/manifest.json)
         tar -xzf ${contracted} -C image "''${config#image/}"
         test "$(jq -r '.config.User' "$config")" = 10001:10001
-        test "$(jq -r '.config.WorkingDir' "$config")" = /app
+        test "$(jq -r '.config.WorkingDir' "$config")" = "/srv/my app"
+        grep -Fx shell ${contracted.release}/lib/served-0.1.0/priv/'two words $HOME'/index.html
         # Extra packages are in the image's layers.
         for layer in $(jq -r '.[0].Layers[]' image/manifest.json); do
           tar -xzf ${contracted} -O "$layer" | tar -t
         done > files
         grep -q -- '-hello-' files
+        grep -q '^\./srv/my app/$' files
         touch "$out"
       '';
 

@@ -56,6 +56,7 @@ in
         # module's compiler metadata, nothing that imports a test module.
         test -z "$(find ${frontend} -name '*@@*')"
         ! grep -rl frontend_test ${frontend}
+        test -z "$(find ${frontend} -name 'frontend_native_helper*')"
         test ! -e ${frontend}/gleeunit
         # So does gleam_stdlib, which only the development dependency needs.
         test ! -e ${frontend}/gleam_stdlib
@@ -80,6 +81,20 @@ in
       + "/frontend";
     manifest = ./fixtures/frontend/manifest.toml;
   };
+
+  # An overridden local package is the one that compiles and ships.
+  javascript-local-override =
+    let
+      overridden = gleam.buildJavascriptPackage {
+        src = ./fixtures/frontend;
+        sourceOverrides.js_widgets = ./fixtures/js_widgets_override;
+      };
+    in
+    pkgs.runCommand "gleam-nix-javascript-local-override" { } ''
+      grep -Fx 'override asset' ${overridden}/js_widgets/priv/override.txt
+      test ! -e ${overridden}/js_widgets/priv/widget.txt
+      touch "$out"
+    '';
 
   # Warnings fail the frontend's build, as they fail a test check.
   javascript-warnings = failsWith "javascript-warnings" (gleam.buildJavascriptPackage {

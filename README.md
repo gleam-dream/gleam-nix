@@ -291,7 +291,7 @@ gleam.buildImage {
 - The image reads `PORT`. Pass a frontend's output as `assets` and read its
   path from `ASSETS_DIR`, or place it in the root application's `priv` with
   `buildRelease { priv.web = frontend; }` and read it through
-  `application:priv_dir`.
+  `code:priv_dir/1`.
 
 ## Build a Gleam frontend
 
