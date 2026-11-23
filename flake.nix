@@ -18,40 +18,15 @@
         inherit nixpkgs;
         gleam-nix.lib.mkLib = mkLib;
       };
-      # The README's whole service setup, evaluated by the checks.
+      # The README's whole service setup, built by the checks.
       service = (import ./examples/service/flake.nix).outputs {
         self = service;
         inherit nixpkgs;
-        gleam-nix.lib = {
-          inherit mkLib;
-          ci = pkgs: import ./ci { inherit pkgs; };
-        };
+        gleam-nix.lib.mkLib = mkLib;
       };
     in
     {
-      lib = {
-        inherit mkLib;
-        # The CI layer, apart from the Gleam scope and versioned on its own.
-        ci = pkgs: import ./ci { inherit pkgs; };
-      };
-      # This repository's own CI declaration: two shards sharing a compile, the
-      # default runner, and coverage derived from the shards.
-      ci = nixpkgs.lib.genAttrs [ "x86_64-linux" "aarch64-linux" ] (
-        system:
-        let
-          checks = self.checks.${system};
-          ci = import ./ci { pkgs = nixpkgs.legacyPackages.${system}; };
-        in
-        ci.declare {
-          adapter = ci.adapters.local;
-          checks = {
-            inherit (checks) test-shard-1 test-shard-2 test-runner-default;
-          };
-          derived = {
-            inherit (checks) test-coverage;
-          };
-        }
-      );
+      lib = { inherit mkLib; };
       checks = forSystems (
         system:
         let
@@ -63,16 +38,15 @@
           exampleShell = quickstart.devShells.${system}.default;
         }
         // nixpkgs.lib.optionalAttrs (system == "x86_64-linux") {
-          # Every declared result of the README's service builds: its shards
-          # against PostgreSQL, the image, and coverage.
-          service-example =
-            let
-              declaration = service.ci.${system};
-              results = declaration.checks // declaration.derived;
-            in
-            pkgs.writeText "gleam-nix-service-example" (
-              builtins.concatStringsSep "\n" (map (check: check.outPath) (builtins.attrValues results))
-            );
+          # The README's service: its shards against PostgreSQL, coverage and
+          # image all build.
+          service-example = pkgs.writeText "gleam-nix-service-example" (
+            builtins.concatStringsSep "\n" (
+              map (result: result.outPath) (
+                builtins.attrValues service.checks.${system} ++ [ service.packages.${system}.image ]
+              )
+            )
+          );
         }
       );
       packages = forSystems (
@@ -85,7 +59,6 @@
           };
         in
         {
-          ci = (import ./ci { inherit pkgs; }).commands;
           default = example.backend;
           frontend = example.assets;
           combined = example.combined;

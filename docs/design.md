@@ -4,10 +4,11 @@ Gleam Nix builds each Gleam package as an independent Nix derivation. It reads t
 resolved dependency graph from Gleam's manifest and preserves compiled package
 outputs across consumers with identical inputs.
 
-On that package graph it composes a test layer, a release and image layer, a
-JavaScript entry point, and a CI layer. Each is a separate module: a plain value
-or function whose defaults the caller can replace. None is tied to a cache
-vendor or a test framework.
+On that package graph it composes a test layer, a release and image layer, and
+a JavaScript entry point. Each is a separate module: a plain value or function
+that returns derivations, whose defaults the caller can replace. The library is
+a library: it gives an adopter the derivations, and the adopter's CI decides how
+to build and cache them.
 
 ## Scope and terms
 
@@ -15,27 +16,25 @@ A **locked package** is a package entry in `manifest.toml`. A **package output**
 contains one compiled OTP application and Gleam's compiler metadata. A
 **project** combines a root Gleam package with its locked packages.
 
-A **check** is one derivation that CI builds: one app or package tested, one
-shard of one, or another check the adopter declares. A **runner** decides how a
+A **check** is one derivation an adopter builds, usually as a flake check: one
+app or package tested, one shard of one, or another check the adopter declares. A **runner** decides how a
 check executes compiled tests. A **service** is a process a check needs while
 its tests run, such as a database. A **derived check** is built from other
-checks' outputs, such as coverage. A **cache adapter** is the value that tells
-the CI layer how to read from and write to one binary cache. The **adopter** is
-the repository that uses the library.
+checks' outputs, such as coverage. The **adopter** is the repository that uses
+the library.
 
 ### Goals
 
 The library serves Gleam repositories on Nix that want fast, trustworthy CI and
 a shipped artifact they can trust:
 
-- **In CI, only the checks whose inputs changed run.** A check is one app or
-  package, or one shard of one. A run where no test input changed finishes in
-  the time it takes to plan and verify.
+- **Only the checks whose inputs changed rebuild.** A check is one app or
+  package, or one shard of one, and its derivation depends only on its inputs.
+  With a binary cache, a run where no test input changed rebuilds nothing.
 - **What ships is what was tested.** The image is built from the dependency
   outputs and compiler the tests used ([D10](#d10-release-and-image)).
-- **Adoption is small.** An adopter writes a short Nix declaration of its
-  checks and at most one line of workflow. Every default sits behind a value
-  the adopter can replace.
+- **Adoption is small.** An adopter writes a short flake of its checks and
+  image. Every default sits behind a value the adopter can replace.
 
 Two shapes exercise the interfaces together, so neither freezes them alone: a
 single-service repository with a sharded PostgreSQL suite, and
@@ -51,8 +50,10 @@ The library does not:
 - implement Rebar3, Mix or npm, which it delegates to Nixpkgs' builders;
 - support languages other than Gleam, targets other than Erlang and JavaScript,
   or cross compilation;
-- deploy. Deploys stay in each adopter or in its own adapter;
-- ship cache backends beyond its shipped adapters, or choose one by default;
+- deploy. Deploys stay in each adopter;
+- orchestrate CI: plan jobs, choose or configure a binary cache, push results,
+  or ship workflows. Adopters compose existing tools for that, such as
+  nix-fast-build, nix-eval-jobs, Cachix, Attic or Magic Nix Cache;
 - balance shards by run time;
 - use content-addressed derivations;
 - run checks or build images on Darwin. Version 1 is Linux only; a Darwin user
@@ -66,17 +67,14 @@ The library does not:
 Nix owns immutable output storage, build scheduling, and binary-cache access.
 The caller owns the Nixpkgs revision and toolchain selection. Gleam owns source
 compilation and the compiler metadata format. The adopter owns which checks
-exist, which cache adapter it uses and its credentials, its deploys, and the
-name of its required check. The CI vendor owns job scheduling.
+exist, its CI, its binary cache and credentials, and its deploys.
 
 ### Stability
 
 The package layer ([D1](#d1-locked-graph) to [D6](#d6-composition)) and the
 test layer are stable. The release and image layer and the JavaScript entry
 point are **unstable**: they have one user, so they may change without a major
-version until a second user adopts them. The CI layer contains no Gleam. It
-carries its own compatibility version and its reusable workflow is tagged
-separately, so a Gleam or toolchain change does not move an adopter's CI.
+version until a second user adopts them.
 
 ### Composition
 
@@ -91,12 +89,8 @@ flowchart LR
   trim[trimErlang] -- runtime --> release
   release --> image[buildImage]
   js[buildJavascriptPackage] -- assets --> image
-  test --> decl[adopter's CI declaration]
-  image --> decl
-  decl --> plan --> build --> verify
-  adapter[cache adapter] --> plan
-  adapter --> build
-  adapter --> verify
+  test --> checks[adopter's flake checks]
+  image --> packages[adopter's flake packages]
 ```
 
 ## Public interfaces
@@ -132,12 +126,11 @@ beamDeps ? package.beamDeps or []; appDir ? ...; }` attaches package metadata
 - `gitSources { manifest; registry; }` turns the manifest's Git entries and a
   hash registry into `sourceOverrides` ([D2](#d2-sources)).
 
-The test, release, JavaScript and CI modules extend the same scope. Their
+The test, release and JavaScript modules extend the same scope. Their
 interfaces live with their behavior: [test checks](#d7-test-checks),
 [runners](#d8-runners), [services](#d9-services),
-[release and image](#d10-release-and-image),
-[JavaScript packages](#d11-javascript-packages), and
-[CI commands](#d12-ci-commands) with [cache adapters](#d13-cache-adapters-and-trust).
+[release and image](#d10-release-and-image), and
+[JavaScript packages](#d11-javascript-packages).
 
 A package output follows Nixpkgs' layout:
 `lib/erlang/lib/<otp-application>-<version>/`. It retains `ebin`,
@@ -475,126 +468,6 @@ frontend edit rebuilds the frontend and the image, never the backend.
 **Verification.** A fixture frontend builds and its tests pass under Node, and
 an image built with it as `assets` serves them.
 
-### D12: CI commands
-
-**Interface.** The CI layer is three vendor-neutral commands over the adopter's
-CI declaration, a per-system flake output alongside `checks`. The declaration
-lists the checks to plan, the checks that always run, the derived checks, and
-the external jobs that planning gates.
-
-- `plan` evaluates the declared checks, asks the cache adapter which are
-  missing, and emits stages, so a shared compile builds once before its shards.
-  It reports why each check missed.
-- `build` builds one check and pushes its closure through the adapter.
-- `verify` substitutes every declared check with local builds forbidden, then
-  builds the derived checks locally from them.
-
-`lib.ci pkgs` returns `{ version; commands; adapters; declare;
-externalMarker; }`. `declare { adapter; checks ? {}; always ? {}; derived ?
-{}; external ? {}; }` makes the declaration; job names are its attribute names,
-distinct across groups, and `shared` is reserved. The commands are one program:
-`gleam-nix-ci plan DECLARATION [--out FILE]`, `gleam-nix-ci build DECLARATION
-(--check NAME | --external NAME | --shared PLAN)` and `gleam-nix-ci verify
-DECLARATION`, where `DECLARATION` is a flake reference such as
-`.#ci.x86_64-linux`. A plan is JSON: `cached`, `missing` with each reason,
-`stages` (`shared`, when two missing checks need one build, then `checks`),
-`external`, `errors` and `seconds`. `externalMarker { name; inputs; }` is the
-result an external job pushes when it passes.
-
-An optional reusable workflow runs `plan`, then each stage, then `verify`, and
-publishes the image from `main` through a command the adopter supplies. It
-takes adapters and checks by name, because a reusable workflow accepts only
-strings and secrets. An adopter can compose the commands in its own workflow
-instead.
-
-**Invariants.**
-
-- **Cache status is asked, never parsed.** `plan` reuses an existing
-  evaluator's cache-status query instead of parsing build output, and its time
-  is a small, measured part of a run where nothing changed.
-- **One verdict.** `verify` is the only check that decides a run. It names any
-  missing check and the job that should have pushed it, reasoning from the
-  adapter's declared scope ([D13](#d13-cache-adapters-and-trust)), so a skipped
-  job never counts as a pass.
-- **The adopter's name.** The required check keeps the name the adopter
-  chooses.
-- **External jobs.** A job outside the library, which `plan` gates, marks
-  itself done by convention under the trust rule, not by evidence. The design
-  says so rather than hide it.
-- **Observable.** Each run reports why each check missed, push failures as a
-  count, and the time per check and per module.
-- **Only the gap.** The commands build only what existing tools leave.
-  nix-eval-jobs evaluates the checks and reports each one's cache status and
-  the builds it still needs; `nix build` builds; the adapter pushes.
-  nix-fast-build skips cached builds and pushes, but on one machine, and
-  nix-github-actions turns checks into a matrix without knowing what is cached.
-  The gap, and the commands' whole job, is turning cache status into stages of
-  only the missing checks with a reason per miss, verifying every declared
-  result with local builds forbidden while naming the job that owed it, and the
-  adapters' declared scopes.
-
-**Verification.** A fixture declaration with a compile shared by two shards
-plans them in two stages. `verify` against a cache missing one check fails
-naming that check and its job. The cache-status query of the evaluator is a
-brittle surface with a fixture: output recorded from nix-eval-jobs 2.35.4, which
-the commands replay through stubs of `nix` and the evaluator, and a check that
-fails when the bundled evaluator is another version. This repository's own
-workflow runs the commands through the reusable workflow with the run-local
-adapter.
-
-### D13: Cache adapters and trust
-
-**Interface.** A cache adapter is a value: a substituter, a push command, a
-query, and `setup` and `teardown` run in each `plan`, `build` and `verify` job.
-Each adapter declares who can read and who can write its entries, globally or
-per ref. Concretely it is a derivation holding `adapter.json` (name,
-substituter, public key, scope) and `bin/setup`, `bin/push` and `bin/teardown`;
-`setup` exits 0 when the run can push and 3 when it can only read. The query is
-the evaluator's cache-status query against the adapter's substituter.
-`adapters.cachix { name; publicKey; }`, `adapters.attic { server; cache;
-publicKey; }` and `adapters.local` ship, and `adapters.mkAdapter` builds a
-private one. The library ships adapters for the GitHub Actions cache, Cachix and
-Attic, and a store local to the run, carried between jobs as workflow
-artifacts. It ships no default; the adopter chooses. An adopter's private
-adapter lives outside this repository and has the same shape.
-
-**Declared scopes.**
-
-| Adapter              | Who reads                                                                       | Who writes                                                                                                   |
-| -------------------- | ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| GitHub Actions cache | A run reads its own ref, then the default branch; a pull request reads its base | Each run writes its own ref; a pull request's entries are readable by that pull request only, forks included |
-| Cachix               | Anyone the cache admits; public caches need no secret                           | A holder of the cache's write token                                                                          |
-| Attic                | Anyone the cache admits                                                         | A holder of a token with push rights on the cache                                                            |
-| Run-local store      | Jobs of the same workflow run                                                   | Jobs of the same workflow run                                                                                |
-
-`plan`, `verify` and the documentation reason from this table, not from
-assumptions. Under the GitHub Actions cache, for example, a merge to `main` is
-not a cache hit: `main` rebuilds what each pull request built, while pull
-requests reuse `main`'s entries and their own.
-
-**The trust rule.** A store path names the recipe, not the result. Write
-access to a cache namespace is therefore merge rights on every repository that
-reads from it, for every path shared across those repositories, toolchains
-and dependency outputs included.
-
-**Invariants.**
-
-- **Shared by default.** Every run that holds a write credential pushes, pull
-  requests included. An adopter can turn off pushes from pull requests.
-- **Degraded, not broken.** A run that can't push, such as a fork's pull request
-  under an adapter that needs a secret, or a run whose cache is unreachable,
-  uses the run-local store. `verify` keeps one code path, and the run is
-  reported as degraded.
-- **Duties the adopter owes.** Under the trust rule, the image records what
-  tested it, a scheduled check ends the trust if the repository ever requires an
-  approving review, and a rebuild without the cache is the recovery.
-
-**Verification.** Each adapter's declared scope is exercised: a fork's pull
-request reaches `verify` through the run-local store, an unreachable cache
-reports a degraded run, and the merge-hit behavior of each shipped adapter is
-recorded. The tool behind the GitHub Actions adapter is a brittle surface with
-a fixture.
-
 ## Implementation boundaries
 
 `lib/manifest.nix` owns graph validation. `lib/import-project.nix` owns source
@@ -609,13 +482,10 @@ warnings gate that the test check and the release share, and
 `lib/gleam-main.erl` the entry module both start through. `lib/test/` owns test
 checks, runners, services and coverage, with the Erlang modules its runners
 load. `lib/release/` owns the trimmed runtime, the release and the image.
-`lib/javascript.nix` owns the JavaScript entry point. `ci/` owns the CI layer:
-the commands, the adapters, the declaration, and `.github/workflows/ci.yml`.
+`lib/javascript.nix` owns the JavaScript entry point.
 Each new module owns one concern and depends only on the package layer's
 public interface: Git sources, test checks with their runners, services, the
-release and image, and the JavaScript entry point. The CI layer sits apart from
-the Gleam scope. It reads only the adopter's CI declaration and the cache
-adapters, and it carries its own compatibility version.
+release and image, and the JavaScript entry point.
 
 ## Research and decisions
 
@@ -639,7 +509,7 @@ output without coupling npm inputs to every Gleam dependency.
 accepts already compiled dependencies from the same compiler version. This
 provides the package boundary without a compiler fork.
 
-The test, image and CI layers generalise two existing setups. A single-service
+The test and image layers generalise two existing setups. A single-service
 repository with a sharded PostgreSQL suite cut its required check from many
 minutes to about a minute and a half when no test input changed, with cached Nix test derivations, sharding, and plan, build and verify
 jobs, but it compiled in one `gleam build`, found shards by reading test logs,
@@ -647,16 +517,16 @@ called gleeunit's private functions, and repeated one cache vendor's steps in
 every job. A multi-app repository ran every app's tests on every push, in the
 development shell, with nothing cached. The modules keep the first setup's
 reuse and the second's per-app independence, without either's hand-written
-plumbing.
+Nix plumbing. The first setup's job orchestration stays with each adopter.
 
 [nix-github-actions](https://github.com/nix-community/nix-github-actions)
 turns flake checks into a job matrix, and
 [nix-fast-build](https://github.com/Mic92/nix-fast-build) and
 [omnix](https://omnix.page/om/ci.html) skip what is already cached.
 [nix-eval-jobs](https://github.com/nix-community/nix-eval-jobs) reports cache
-status per job. The CI layer builds on them and writes only the gap they leave.
-[GitHub's cache documentation](https://docs.github.com/en/actions/reference/workflows-and-actions/dependency-caching)
-defines the per-ref scope that the GitHub Actions adapter declares.
+status per job. Because each check is an ordinary derivation, an adopter
+composes these tools and a binary cache of its choice over the library's
+checks; the library does not wrap them.
 
 ### Rejected alternatives
 
@@ -670,22 +540,15 @@ defines the per-ref scope that the GitHub Actions adapter declares.
   `main` would move into Nix, and local `gleam test` and CI would run different
   entry points. The default runner runs the package's own `main`.
 - **Reading Git sources with an evaluation-time fetch.** It breaks D2's rule,
-  puts a fetch in every plan job, and needs Git credentials there.
-- **A new repository for the test, image or CI layers.** One home, with
-  separate modules and a separate compatibility version for CI, keeps the
-  interfaces in step with the package layer.
-- **A reusable workflow with a private action injected by the caller.**
-  Reusable workflows accept only strings and secrets.
-- **Per-stage composite actions as the main interface.** Every adopter would
-  keep a long workflow. They remain one way to compose the commands.
-- **Pull request runs never push by default.** It leaves `verify` without a
-  channel for results, and it discards the reuse that makes Nix worth having.
-  The trust boundary is the write credential, and the trust rule says so.
-- **Workflow artifacts as the main channel.** Every push to a pull request
-  would rebuild from `main`. They are kept as the run-local adapter for runs
-  that can't push.
-- **A default cache backend.** Each backend's read and write scope differs
-  enough to change what a merge reuses, so the adopter chooses.
+  puts a fetch in every evaluation, and needs Git credentials there.
+- **A new repository for the test or image layers.** One home, with separate
+  modules, keeps the interfaces in step with the package layer.
+- **A CI layer in the library: plan, build and verify commands, cache
+  adapters and a reusable workflow.** It was designed and built, then dropped
+  by the owner. It made the library own job scheduling, cache choice and a
+  write-trust model, tied it to CI vendors and cache services, and duplicated
+  what nix-fast-build, nix-eval-jobs and the cache tools already do. The
+  library stays a set of composable derivations.
 - **Deferring the image and JavaScript layers to a second user.** The image is
   the point for a service, and an image build already exists to extract. The
   risk of freezing around one user is accepted and marked unstable.
@@ -693,18 +556,8 @@ defines the per-ref scope that the GitHub Actions adapter declares.
   databases.** Test harnesses assume one database per VM; shards get their own
   VM and services instead.
 
-### Open questions
-
-- **Which tool backs the GitHub Actions adapter.** A substituter that caches
-  within one workflow of one repository, or a store snapshot saved and restored
-  per job. A spike decides it, measuring query counts, throttling, bytes stored
-  against the repository's cache allowance, and whether a fork's entries behave
-  as documented.
-
 ### Rulings
 
-- **Which gap existing CI tools leave** is settled in [D12](#d12-ci-commands):
-  staging, verification and the adapters' declared scopes.
 - **Hash sharding is kept until measured.** Each check's `report` records time
   per module; the first adoption's reports decide. If shards are uneven, the
   fallback is the shard count or pinning a module, not balancing by run time,

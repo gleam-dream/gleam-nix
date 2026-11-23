@@ -18,19 +18,19 @@ Nix owns local store reuse and sharing through configured binary caches.
 ## Scope
 
 On one package graph the library builds packages, [test checks](#test-a-project),
-a [release and image](#ship-an-image), a [Gleam frontend](#build-a-gleam-frontend),
-and [CI](#run-ci) that builds only the checks whose inputs changed. Checks,
-releases and images run on Linux. The release, image and frontend are
-unstable. See the [design](docs/design.md) for every interface.
+a [release and image](#ship-an-image), and a [Gleam frontend](#build-a-gleam-frontend).
+Each is a function returning derivations, so it composes with the rest of your
+flake. Checks, releases and images run on Linux. The release, image and
+frontend are unstable. See the [design](docs/design.md) for every interface.
 
-The library doesn't resolve versions, deploy, support languages other than
+The library doesn't orchestrate CI, resolve versions, deploy, support languages other than
 Gleam or targets other than Erlang and JavaScript, or run checks and images on
 Darwin.
 
 ## A service in one flake
 
-A service with a PostgreSQL test suite in four shards, a coverage check, an
-image, and CI on a Cachix cache. It is [the service example](examples/service/flake.nix),
+A service with a PostgreSQL test suite in four shards, a coverage check and an
+image. It is [the service example](examples/service/flake.nix),
 which the library's checks build:
 
 ```nix
@@ -51,7 +51,6 @@ which the library's checks build:
       system = "x86_64-linux";
       pkgs = nixpkgs.legacyPackages.${system};
       gleam = gleam-nix.lib.mkLib pkgs;
-      ci = gleam-nix.lib.ci pkgs;
       tested = gleam.importProject {
         src = ./.;
         includeDev = true;
@@ -89,12 +88,18 @@ which the library's checks build:
       };
     in
     {
-      checks.${system} = builtins.listToAttrs (
-        pkgs.lib.imap1 (index: check: {
-          name = "shard-${toString index}";
-          value = check;
-        }) shards
-      );
+      # Each shard is its own derivation; coverage checks that every test
+      # module ran in exactly one of them.
+      checks.${system} =
+        builtins.listToAttrs (
+          pkgs.lib.imap1 (index: check: {
+            name = "shard-${toString index}";
+            value = check;
+          }) shards
+        )
+        // {
+          coverage = gleam.mkCoverageCheck { checks = shards; };
+        };
       packages.${system}.image = gleam.buildImage {
         inherit release;
         name = "my-service";
@@ -102,29 +107,12 @@ which the library's checks build:
         health = "/health";
         user = "app";
       };
-      ci.${system} = ci.declare {
-        adapter = ci.adapters.cachix {
-          name = "my-cache";
-          publicKey = "my-cache.cachix.org-1:...";
-        };
-        checks = self.checks.${system} // {
-          image = self.packages.${system}.image;
-        };
-        derived.coverage = gleam.mkCoverageCheck { checks = shards; };
-      };
     };
 }
 ```
 
-And the one line of workflow, in a job whose name is your required check:
-
-```yaml
-jobs:
-  ci:
-    uses: gleam-dream/gleam-nix/.github/workflows/ci.yml@ci-v1
-    with: { declaration: ".#ci.x86_64-linux" }
-    secrets: inherit
-```
+`nix flake check` builds the shards and coverage; `nix build .#image` builds
+the image.
 
 ## Capabilities
 
@@ -326,46 +314,29 @@ image, never the backend. Its locked Hex packages are fetched as separate
 derivations and compiled in one offline `gleam build`. This entry point is
 unstable.
 
-## Run CI
+## Use it in CI
 
-The CI layer is apart from the Gleam scope and carries its own version
-(`lib.ci pkgs`, version 1). A declaration lists the checks to plan, checks that
-always run, derived checks such as coverage, external jobs, and one cache
-adapter. Three commands run over it, in any CI vendor:
+Every check is an ordinary derivation whose inputs are only what it needs, so
+any Nix CI setup gets the reuse: with a binary cache, an unchanged check is
+fetched instead of rebuilt. The library ships no CI tooling; compose the tools
+that exist:
 
-```sh
-nix run github:gleam-dream/gleam-nix#ci -- plan .#ci.x86_64-linux --out plan.json
-nix run github:gleam-dream/gleam-nix#ci -- build .#ci.x86_64-linux --check shard-1
-nix run github:gleam-dream/gleam-nix#ci -- verify .#ci.x86_64-linux
-```
+- Build only what the cache lacks with
+  [nix-fast-build](https://github.com/Mic92/nix-fast-build) `--skip-cached`, or
+  read per-check cache status from
+  [nix-eval-jobs](https://github.com/nix-community/nix-eval-jobs)
+  `--check-cache-status`.
+- Share results through [Cachix](https://www.cachix.org/),
+  [Attic](https://github.com/zhaofengli/attic) or, on GitHub Actions,
+  [Magic Nix Cache](https://github.com/DeterminateSystems/magic-nix-cache-action).
+- Run shards as parallel jobs with
+  [nix-github-actions](https://github.com/nix-community/nix-github-actions), or
+  a matrix over `.#checks.x86_64-linux` names.
+- For one verdict that nothing was skipped, substitute every check with local
+  builds forbidden: `nix build --max-jobs 0 .#checks.x86_64-linux.<name>`.
 
-- `plan` asks nix-eval-jobs which checks are missing from the cache, says why
-  each missed, and stages them so a compile that two shards share builds once
-  first.
-- `build` builds one check, or the shared builds, and pushes the result
-  through the adapter, reporting push failures and each module's time.
-- `verify` is the only verdict. It substitutes every declared result with local
-  builds forbidden, names any missing check and the job that should have pushed
-  it, then builds the derived checks.
-
-The [reusable workflow](.github/workflows/ci.yml) runs plan, the shared stage,
-each missing check, external jobs and verify, and can publish from the default
-branch with a command you supply.
-
-| Adapter           | Who reads                     | Who writes                                                |
-| ----------------- | ----------------------------- | --------------------------------------------------------- |
-| `adapters.cachix` | Anyone the cache admits       | A holder of the cache's write token (`CACHIX_AUTH_TOKEN`) |
-| `adapters.attic`  | Anyone the cache admits       | A token with push rights (`ATTIC_TOKEN`)                  |
-| `adapters.local`  | Jobs of the same workflow run | Jobs of the same workflow run                             |
-
-There's no default adapter. A GitHub Actions cache adapter waits on a
-measurement of the tools behind it. A run without a write credential, such as a
-fork's pull request, carries its results through the run-local store and is
-reported as degraded.
-
-**Trust.** A store path names the recipe, not the result. Write access to a
-cache is therefore merge rights on every repository that reads from it. Record
-in the image what tested it, and recover by rebuilding without the cache.
+A store path names the recipe, not the result, so write access to a binary
+cache is merge rights on every repository that reads from it.
 
 ## How caching works
 

@@ -15,7 +15,6 @@
       system = "x86_64-linux";
       pkgs = nixpkgs.legacyPackages.${system};
       gleam = gleam-nix.lib.mkLib pkgs;
-      ci = gleam-nix.lib.ci pkgs;
       tested = gleam.importProject {
         src = ./.;
         includeDev = true;
@@ -53,28 +52,24 @@
       };
     in
     {
-      checks.${system} = builtins.listToAttrs (
-        pkgs.lib.imap1 (index: check: {
-          name = "shard-${toString index}";
-          value = check;
-        }) shards
-      );
+      # Each shard is its own derivation; coverage checks that every test
+      # module ran in exactly one of them.
+      checks.${system} =
+        builtins.listToAttrs (
+          pkgs.lib.imap1 (index: check: {
+            name = "shard-${toString index}";
+            value = check;
+          }) shards
+        )
+        // {
+          coverage = gleam.mkCoverageCheck { checks = shards; };
+        };
       packages.${system}.image = gleam.buildImage {
         inherit release;
         name = "my-service";
         port = 8080;
         health = "/health";
         user = "app";
-      };
-      ci.${system} = ci.declare {
-        adapter = ci.adapters.cachix {
-          name = "my-cache";
-          publicKey = "my-cache.cachix.org-1:...";
-        };
-        checks = self.checks.${system} // {
-          image = self.packages.${system}.image;
-        };
-        derived.coverage = gleam.mkCoverageCheck { checks = shards; };
       };
     };
 }
