@@ -13,7 +13,7 @@ let
     count = 2;
     setup = "tested_test.setup";
     # A pinned module makes each shard's content known to the coverage checks.
-    pins."tested@alpha_test" = 1;
+    pins."tested/alpha_test" = 1;
   };
   default = gleam.mkTestCheck { project = tested; };
   sharded = map (
@@ -83,33 +83,6 @@ let
     env.EXPECTED = "nobody nowhere 0";
   };
 
-  rejects = value: !(builtins.tryEval (builtins.seq value.drvPath true)).success;
-  otherGleam =
-    version:
-    (gleam.overrideScope (
-      _: prev: {
-        gleam = prev.gleam.overrideAttrs {
-          inherit version;
-          __intentionallyOverridingVersion = true;
-        };
-      }
-    )).mkTestCheck
-      {
-        project =
-          (gleam.overrideScope (
-            _: prev: {
-              gleam = prev.gleam.overrideAttrs {
-                inherit version;
-                __intentionallyOverridingVersion = true;
-              };
-            }
-          )).importProject
-            {
-              src = ./fixtures/warn_erlang;
-              includeDev = true;
-            };
-      };
-
   failures = lib.runTests {
     testShardsShareOneCompile = {
       expr = lib.unique (map (check: check.compiled.drvPath) (sharded ++ [ default ]));
@@ -130,62 +103,6 @@ let
         root = true;
         dependencies = lib.mapAttrs (_: package: package.drvPath) tested.packages;
       };
-    };
-    testProductionImportIsRejected = {
-      expr = rejects (gleam.mkTestCheck { project = gleam.importProject { src = ./fixtures/tested; }; });
-      expected = true;
-    };
-    testUntestedGleamIsRejected = {
-      expr = {
-        older = rejects (otherGleam "1.18.1");
-        newer = rejects (otherGleam "1.20.0");
-        supported = rejects (otherGleam "1.19.9");
-      };
-      expected = {
-        older = true;
-        newer = true;
-        supported = false;
-      };
-    };
-    testServiceVariablesClash = {
-      expr = rejects (postgresql {
-        services = [
-          (gleam.testServices.postgresql { name = "first"; })
-          (gleam.testServices.postgresql {
-            name = "second";
-            env = { };
-            aliases.PGHOST = "127.0.0.1";
-          })
-        ];
-      });
-      expected = true;
-    };
-    testServiceAndCheckVariablesClash = {
-      expr = rejects (postgresql {
-        services = [ (gleam.testServices.postgresql { }) ];
-        env.PGUSER = "someone";
-      });
-      expected = true;
-    };
-    testServiceNamesAreDistinct = {
-      expr = rejects (postgresql {
-        services = [
-          (gleam.testServices.postgresql { env = { }; })
-          (gleam.testServices.postgresql { env = { }; })
-        ];
-      });
-      expected = true;
-    };
-    testShardPinsStayInRange = {
-      expr =
-        (builtins.tryEval
-          (gleam.testRunners.shard {
-            index = 0;
-            count = 2;
-            pins.tested = 2;
-          }).name
-        ).success;
-      expected = false;
     };
   };
 
@@ -255,21 +172,44 @@ in
       ];
 
   # Adding a module moves no other module between shards.
+  # Adding a test module moves no other module between shards: the same
+  # project with and without tested/alpha_test, through each check's own
+  # shard output.
   test-shard-membership =
-    pkgs.runCommand "gleam-nix-test-shard-membership"
-      {
-        nativeBuildInputs = [ gleam.erlang ];
-      }
-      ''
-        erl -noshell -pa ${gleam.testSupport gleam.erlang}/ebin -eval '
-          Modules = [<<"a_test">>, <<"b_test">>, <<"c@d_test">>, <<"e_test">>, <<"f_test">>],
-          Before = [gleam_nix_shard:select(Modules, I, 4, #{}) || I <- lists:seq(0, 3)],
-          After = [gleam_nix_shard:select(Modules ++ [<<"new_test">>], I, 4, #{}) || I <- lists:seq(0, 3)],
-          Before = [lists:delete(<<"new_test">>, Shard) || Shard <- After],
-          [<<"a_test">>] = gleam_nix_shard:select([<<"a_test">>], 3, 4, #{<<"a_test">> => 3}),
-          halt(0).'
+    let
+      shardsOf =
+        project:
+        map (runner: gleam.mkTestCheck { inherit project runner; }) (
+          gleam.testRunners.shards {
+            count = 3;
+            setup = "tested_test.setup";
+          }
+        );
+      before = shardsOf (without "tested/test/tested/alpha_test.gleam");
+      after = shardsOf tested;
+    in
+    pkgs.runCommand "gleam-nix-test-shard-membership" { } (
+      lib.concatStrings (
+        lib.zipListsWith (old: new: ''
+          { grep -vFx tested@alpha_test ${new}/shard || [ "$?" -eq 1 ]; } | diff ${old}/shard -
+        '') before after
+      )
+      + ''
+        cat ${lib.concatMapStringsSep " " (check: "${check}/shard") after} | grep -Fx tested@alpha_test
         touch "$out"
-      '';
+      ''
+    );
+
+  # A pin that names no test module fails the shard instead of being dropped.
+  test-shard-unmatched-pin = failsWith "test-shard-unmatched-pin" (gleam.mkTestCheck {
+    project = tested;
+    runner = gleam.testRunners.shard {
+      index = 0;
+      count = 2;
+      setup = "tested_test.setup";
+      pins."tested/alfa_test" = 1;
+    };
+  }) [ "gleam-nix: shard pins name no test module: tested@alfa_test." ];
 
   test-gleam-warnings =
     failsWith "test-gleam-warnings"

@@ -1,0 +1,4 @@
+# A Git entry without its locked commit.
+packages = [
+  { name = "no_commit", version = "0.1.0", build_tools = ["gleam"], requirements = [], source = "git", repo = "https://github.com/gleam-dream/gleam-nix.git" },
+]

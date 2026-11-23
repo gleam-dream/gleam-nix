@@ -22,7 +22,6 @@
 let
   locked = readManifest manifest;
   config = builtins.fromTOML (builtins.readFile (src + "/gleam.toml"));
-  development = lib.attrNames (config."dev-dependencies" or config.dev_dependencies or { });
   sourceFor =
     package:
     if sourceOverrides ? ${package.name} then
@@ -34,16 +33,13 @@ let
         sha256 =
           package.outer_checksum or (throw "gleam-nix: Hex package ${package.name} needs outer_checksum.");
       }
-    else if package.source == "local" then
-      null
     else
       throw "gleam-nix: buildJavascriptPackage needs sourceOverrides.${package.name} for its ${package.source} source.";
-  downloaded = builtins.filter (
-    package: package.source != "local" || sourceOverrides ? ${package.name}
-  ) locked.packages;
-  local = builtins.filter (
-    package: package.source == "local" && !(sourceOverrides ? ${package.name})
-  ) locked.packages;
+  downloaded = locked.packages;
+  # Gleam resolves versions again, online, whenever a JavaScript project has a
+  # local path dependency, even with every package downloaded, so the
+  # sandboxed build cannot run.
+  local = builtins.filter (package: package.source == "local") locked.packages;
   # Development packages and the root's test modules stay out of the output.
   testModules = lib.optionals (builtins.pathExists (src + "/test")) (
     map
@@ -54,9 +50,20 @@ let
         )
       )
   );
-  developmentOnly = builtins.filter (
-    name: !(builtins.elem name (lib.attrNames (config.dependencies or { })))
-  ) development;
+  # The packages the frontend needs at run time: its dependencies and theirs,
+  # through the locked requirements. Every other locked package, such as a
+  # development dependency and what only it needs, stays out of the output.
+  requirementsOf = lib.listToAttrs (
+    map (package: lib.nameValuePair package.name package.requirements) locked.packages
+  );
+  runtimeClosure = builtins.genericClosure {
+    startSet = map (name: { key = name; }) (lib.attrNames (config.dependencies or { }));
+    operator = item: map (name: { key = name; }) (requirementsOf.${item.key} or [ ]);
+  };
+  runtimeNames = map (item: item.key) runtimeClosure;
+  developmentOnly = builtins.filter (name: !(builtins.elem name runtimeNames)) (
+    map (package: package.name) locked.packages
+  );
   standardArgs = builtins.removeAttrs args [
     "manifest"
     "sourceOverrides"
@@ -65,6 +72,10 @@ let
 in
 if (config.target or "erlang") != "javascript" then
   throw "gleam-nix: buildJavascriptPackage needs a project whose gleam.toml sets target = \"javascript\"."
+else if local != [ ] then
+  throw "gleam-nix: buildJavascriptPackage cannot build local path dependencies, because Gleam then resolves versions online: ${
+    lib.concatMapStringsSep ", " (package: package.name) local
+  }."
 else
   stdenvNoCC.mkDerivation (
     standardArgs
@@ -80,14 +91,6 @@ else
       strictDeps = true;
       dontConfigure = true;
 
-      postUnpack = (args.postUnpack or "") + ''
-        ${lib.concatMapStrings (package: ''
-          mkdir -p "$(dirname "$sourceRoot/${package.path}")"
-          cp -R ${src + "/${package.path}"} "$sourceRoot/${package.path}"
-          chmod -R u+w "$sourceRoot/${package.path}"
-        '') local}
-      '';
-
       buildPhase =
         args.buildPhase or ''
           runHook preBuild
@@ -99,9 +102,10 @@ else
           '') downloaded}
           {
             echo "[packages]"
+            # Gleam's record of downloaded packages; a missing one makes it resolve.
             ${lib.concatMapStrings (package: ''
               echo '${package.name} = "${package.version}"'
-            '') downloaded}
+            '') locked.packages}
           } > build/packages/packages.toml
           ${lib.optionalString (nodeModules != null) ''
             ln -s ${nodeModules}/node_modules node_modules

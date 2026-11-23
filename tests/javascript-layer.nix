@@ -8,7 +8,7 @@ let
     src = ./fixtures/frontend;
     # The fixture's tests fail when the greeting changes.
     postPatch = ''
-      substituteInPlace src/frontend.gleam --replace-fail uppercase lowercase
+      substituteInPlace src/frontend.gleam --replace-fail HELLO hello
     '';
   };
   runtime = gleam.trimErlang { without = [ "wx" ]; };
@@ -24,12 +24,7 @@ let
     user = "app";
     assets = frontend;
   };
-  rejects = value: !(builtins.tryEval (builtins.seq value.drvPath true)).success;
   failures = lib.runTests {
-    testImportProjectStaysErlangOnly = {
-      expr = rejects (gleam.importProject { src = ./fixtures/frontend; }).package;
-      expected = true;
-    };
     # The backend never depends on the frontend.
     testFrontendLeavesBackendAlone = {
       expr = image.release.drvPath;
@@ -58,6 +53,8 @@ in
         # Test code and development dependencies stay out of the assets.
         test ! -e ${frontend}/frontend/frontend_test.mjs
         test ! -e ${frontend}/gleeunit
+        # So does gleam_stdlib, which only the development dependency needs.
+        test ! -e ${frontend}/gleam_stdlib
         touch "$out"
       '';
 

@@ -329,7 +329,9 @@ ship.
   `main`, exactly as `gleam test` does.
 - The **shard runner**, `testRunners.shard { index; count; setup ? null; pins ?
 {}; }`, runs one shard's modules. `setup` names a Gleam function as
-  `module.function`; `pins` maps a module to a shard. `testRunners.shards {
+  `module.function`; `pins` maps a test module to a shard. Both name modules
+  by their Gleam path, such as `my_app/users_test`. A pin that names no test
+  module fails the shard, so a typo never moves a module silently. `testRunners.shards {
 count; setup; pins; }` lists every shard's runner.
 
 **Invariants.**
@@ -451,8 +453,11 @@ This entry point is unstable ([Stability](#stability)).
 ... }` builds a Gleam project for the JavaScript target and runs its tests with
 Node. Its npm dependencies come from a separate npm derivation
 ([D6](#d6-composition)), whose `node_modules` it links as `nodeModules`. Its
-output is Gleam's JavaScript build tree without test modules or development
-packages, and it can be an image's `assets`. Ordinary derivation attributes and
+output is Gleam's JavaScript build tree without test modules or any package
+outside the runtime dependency closure, and it can be an image's `assets`. A
+local path dependency fails evaluation: Gleam resolves versions online whenever
+a JavaScript project has one, so the sandboxed build cannot run. Other non-Hex
+sources come through `sourceOverrides`. Ordinary derivation attributes and
 hooks pass through.
 
 Hex sources are fetched as `importProject` fetches them, as separate
@@ -544,9 +549,8 @@ checks; the library does not wrap them.
 - **A new repository for the test or image layers.** One home, with separate
   modules, keeps the interfaces in step with the package layer.
 - **A CI layer in the library: plan, build and verify commands, cache
-  adapters and a reusable workflow.** It was designed and built, then dropped
-  by the owner. It made the library own job scheduling, cache choice and a
-  write-trust model, tied it to CI vendors and cache services, and duplicated
+  adapters and a reusable workflow.** It would make the library own job
+  scheduling, cache choice and a write-trust model, tie it to CI vendors and cache services, and duplicate
   what nix-fast-build, nix-eval-jobs and the cache tools already do. The
   library stays a set of composable derivations.
 - **Deferring the image and JavaScript layers to a second user.** The image is

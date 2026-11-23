@@ -4,10 +4,6 @@ let
   inherit (pkgs) lib;
   inherit (import ./helpers.nix { inherit pkgs; }) failsWith;
   served = gleam.importProject { src = ./fixtures/served; };
-  servedTests = gleam.importProject {
-    src = ./fixtures/served;
-    includeDev = true;
-  };
   testedProject = gleam.importProject {
     src = ./fixtures/tested;
     includeDev = true;
@@ -25,26 +21,7 @@ let
     user = "app";
   };
 
-  rejects = value: !(builtins.tryEval (builtins.seq value.drvPath true)).success;
   failures = lib.runTests {
-    testReleaseRejectsDevelopmentCompile = {
-      expr = rejects (
-        gleam.buildRelease {
-          project = servedTests;
-          inherit runtime;
-        }
-      );
-      expected = true;
-    };
-    testReleaseRejectsForeignRuntime = {
-      expr = rejects (
-        gleam.buildRelease {
-          project = served;
-          runtime = pkgs.hello;
-        }
-      );
-      expected = true;
-    };
     # What ships is what was tested: the release and the test check share
     # every dependency derivation and the compiler.
     testReleaseSharesTestedDependencies = {
@@ -98,6 +75,24 @@ in
     user = "app";
     assets = gleam.erlang;
   }) [ "gleam-nix: the image of untrimmed holds the untrimmed Erlang:" ];
+
+  # Many matching files in one store path, more names than a 64 KiB pipe holds:
+  # the scan must still fail. The files name the Erlang as text, so it is not
+  # a reference and only this path matches.
+  release-image-many-matches = failsWith "release-image-many-matches" (gleam.buildImage {
+    inherit release;
+    name = "many-matches";
+    port = 8080;
+    health = "/health";
+    user = "app";
+    assets = pkgs.runCommand "names-untrimmed-erlang" { } ''
+      mkdir -p "$out"
+      for index in $(seq 2000); do
+        echo ${lib.escapeShellArg (builtins.unsafeDiscardStringContext gleam.erlang.outPath)} \
+          > "$out/a-long-file-name-so-that-the-list-of-matches-exceeds-one-buffer-$index"
+      done
+    '';
+  }) [ "gleam-nix: the image of many-matches holds the untrimmed Erlang:" ];
 
   release-removed-application = failsWith "release-removed-application" (gleam.buildRelease {
     project = gleam.importProject { src = ./fixtures/needs_wx; };

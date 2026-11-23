@@ -32,6 +32,19 @@ let
     else
       null;
 
+  # Malformed entries are refused first, naming each package, so no later
+  # step reads a missing repo, commit or path.
+  unlocked = builtins.filter (
+    package:
+    !(builtins.isString (package.repo or null)) || !(builtins.isString (package.commit or null))
+  ) entries;
+  outside = builtins.filter (
+    package:
+    let
+      path = package.path or "";
+    in
+    !(builtins.isString path) || lib.hasPrefix "/" path || builtins.elem ".." (lib.splitString "/" path)
+  ) entries;
   hashFor = package: registry.${package.repo}.${package.commit} or null;
   missing = builtins.filter (package: hashFor package == null) entries;
 
@@ -55,19 +68,18 @@ let
           };
       path = package.path or "";
     in
-    if !(builtins.isString (package.repo or null)) || !(builtins.isString (package.commit or null)) then
-      throw "gleam-nix: Git package ${package.name} needs repo and commit in manifest.toml."
-    else if
-      !(builtins.isString path) || lib.hasPrefix "/" path || builtins.elem ".." (lib.splitString "/" path)
-    then
-      throw "gleam-nix: Git package ${package.name} has a path outside its repository: ${toString path}."
-    else if path == "" then
+    if path == "" then
       fetched
     else
       # Interpolation keeps the fetched tree opaque: nothing is read here.
       "${fetched}/${lib.removeSuffix "/" path}";
+  names = packages: lib.concatMapStringsSep ", " (package: package.name) packages;
 in
-if missing != [ ] then
+if unlocked != [ ] then
+  throw "gleam-nix: Git packages need repo and commit in manifest.toml: ${names unlocked}."
+else if outside != [ ] then
+  throw "gleam-nix: Git packages have a path outside their repository: ${names outside}."
+else if missing != [ ] then
   throw "gleam-nix: the Git source registry lacks ${
     lib.concatMapStringsSep ", " (
       package: "${package.name} (${package.repo} at ${package.commit})"

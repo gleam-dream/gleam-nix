@@ -21,23 +21,23 @@ let
     }:
     let
       badPins = lib.filterAttrs (_: shard: !(builtins.isInt shard) || shard < 0 || shard >= count) pins;
+      # Gleam module paths, as in `gleam test`: tested/alpha_test is the
+      # Erlang module tested@alpha_test.
+      erlangModule = builtins.replaceStrings [ "/" ] [ "@" ];
+      setupParts = if setup == null then [ ] else lib.splitString "." setup;
       setupTarget =
         if setup == null then
           ""
         else
-          let
-            parts = lib.splitString "." setup;
-          in
-          if builtins.length parts != 2 then
-            throw "gleam-nix: shard setup must name a Gleam function as module.function, not ${setup}."
-          else
-            "${builtins.replaceStrings [ "/" ] [ "@" ] (builtins.elemAt parts 0)}:${builtins.elemAt parts 1}";
+          "${erlangModule (builtins.elemAt setupParts 0)}:${builtins.elemAt setupParts 1}";
       pinFile = lib.concatStrings (
-        lib.mapAttrsToList (module: shard: "${module}\t${toString shard}\n") pins
+        lib.mapAttrsToList (module: shard: "${erlangModule module}\t${toString shard}\n") pins
       );
     in
     if !(builtins.isInt count) || count < 1 then
       throw "gleam-nix: a shard count must be a positive integer."
+    else if setup != null && builtins.length setupParts != 2 then
+      throw "gleam-nix: shard setup must name a Gleam function as module.function, not ${setup}."
     else if index < 0 || index >= count then
       throw "gleam-nix: shard ${toString index} is outside 0 to ${toString (count - 1)}."
     else if badPins != { } then

@@ -99,8 +99,11 @@ else
         # Binaries embed store paths, so scan file contents, not only references.
         hash=$(basename ${builtins.unsafeDiscardStringContext untrimmed.outPath} | cut -c1-32)
         while IFS= read -r path; do
-          if found=$(grep -rlF --no-messages "$hash" "$path" | head -1) && [ -n "$found" ]; then
-            echo "gleam-nix: the image of ${name} holds the untrimmed Erlang: $found" >&2
+          # No pipe: the verdict must not depend on grep's status after a
+          # reader closes early. Status 1 only means no match.
+          found=$(grep -rlF --no-messages "$hash" "$path") || [ "$?" -eq 1 ]
+          if [ -n "$found" ]; then
+            echo "gleam-nix: the image of ${name} holds the untrimmed Erlang: ''${found%%$'\n'*}" >&2
             exit 1
           fi
         done < ${closure}/store-paths

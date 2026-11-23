@@ -36,8 +36,18 @@ select(Modules, Index, Count, Pins) ->
 write_selection(ModulesFile, PinsFile, Index, Count, Out) ->
     Pins = maps:from_list([list_to_tuple(Pin) || Line <- lines(PinsFile),
                            Pin <- [pin(Line)]]),
-    Selected = select(lines(ModulesFile), Index, Count, Pins),
-    ok = file:write_file(Out, [[Module, $\n] || Module <- Selected]).
+    Modules = lines(ModulesFile),
+    %% A pin that names no test module would be dropped silently and its
+    %% module would run on its hashed shard instead.
+    case [Pin || Pin <- maps:keys(Pins), not lists:member(Pin, Modules)] of
+        [] ->
+            Selected = select(Modules, Index, Count, Pins),
+            ok = file:write_file(Out, [[Module, $\n] || Module <- Selected]);
+        Unmatched ->
+            io:format(standard_error, "gleam-nix: shard pins name no test module: ~ts.~n",
+                      [lists:join(", ", lists:sort(Unmatched))]),
+            erlang:halt(1)
+    end.
 
 pin(Line) ->
     [Module, Shard] = binary:split(Line, <<"\t">>),

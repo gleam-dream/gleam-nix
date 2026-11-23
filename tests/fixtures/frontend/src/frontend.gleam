@@ -1,5 +1,5 @@
-import gleam/string
-
+// No run-time dependencies: gleam_stdlib arrives only through gleeunit, a
+// development dependency, so it must stay out of the output.
 pub fn greeting() -> String {
-  string.uppercase("hello from the frontend")
+  "HELLO FROM THE FRONTEND"
 }

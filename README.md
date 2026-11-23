@@ -395,8 +395,9 @@ backend on asset edits. Compiled Gleam dependencies remain independent either wa
   dependencies; `mkTestCheck` runs them.
 - Flake outputs cover x86-64 Linux, ARM64 Linux and ARM64 macOS. Test checks,
   releases and images are Linux only. Cross compilation stays outside this
-  library. A frontend's packages come from Hex, local paths or
-  `sourceOverrides`.
+  library. A frontend's packages come from Hex or `sourceOverrides`; a local
+  path dependency fails evaluation, because Gleam then resolves versions
+  online.
 
 ## Examples and reference
 

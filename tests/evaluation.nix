@@ -167,8 +167,220 @@ let
     };
   };
   plain = source: builtins.unsafeDiscardStringContext (toString source);
+
+  # Refusals of the test, release and JavaScript layers, through their public
+  # interfaces. Forcing a value to weak head normal form runs every refusal
+  # these functions make, on any system, without a derivation's platform check.
+  refuses = value: !(builtins.tryEval (builtins.seq value true)).success;
+  tested = gleam.importProject {
+    src = ./fixtures/tested;
+    includeDev = true;
+  };
+  testCheck = args: gleam.mkTestCheck ({ project = tested; } // args);
+  withGleam =
+    version:
+    gleam.overrideScope (
+      _: prev: {
+        gleam = prev.gleam.overrideAttrs {
+          inherit version;
+          __intentionallyOverridingVersion = true;
+        };
+      }
+    );
+  checkWithGleam =
+    version:
+    (withGleam version).mkTestCheck {
+      project = (withGleam version).importProject {
+        src = ./fixtures/warn_erlang;
+        includeDev = true;
+      };
+    };
+  postgresql = gleam.testServices.postgresql;
+  runtime = gleam.trimErlang { without = [ "wx" ]; };
+  frontend = args: gleam.buildJavascriptPackage ({ src = ./fixtures/frontend; } // args);
 in
 lib.runTests {
+  testGitSourcesRejectUnlockedEntry = {
+    expr = refuses (
+      gleam.gitSources {
+        manifest = ./manifests/git-unlocked.toml;
+        registry = { };
+      }
+    );
+    expected = true;
+  };
+  testGitSourcesRejectPathsOutsideRepository = {
+    expr = refuses (
+      gleam.gitSources {
+        manifest = ./manifests/git-outside.toml;
+        registry = { };
+      }
+    );
+    expected = true;
+  };
+
+  testTestCheckRejectsProductionImport = {
+    expr = refuses (gleam.mkTestCheck { project = gleam.importProject { src = ./fixtures/tested; }; });
+    expected = true;
+  };
+  testTestCheckAcceptsOnlyPinnedGleam = {
+    expr = map (version: refuses (checkWithGleam version)) [
+      "1.18.1"
+      "1.20.0"
+      "1.19.9"
+    ];
+    expected = [
+      true
+      true
+      false
+    ];
+  };
+  testTestCheckRejectsInvalidServiceName = {
+    expr = refuses (testCheck {
+      services = [ (postgresql { name = "my-database"; }) ];
+    });
+    expected = true;
+  };
+  testTestCheckRejectsRepeatedServiceName = {
+    expr = refuses (testCheck {
+      services = [
+        (postgresql { env = { }; })
+        (postgresql { env = { }; })
+      ];
+    });
+    expected = true;
+  };
+  testTestCheckRejectsClashBetweenServices = {
+    expr = refuses (testCheck {
+      services = [
+        (postgresql { name = "first"; })
+        (postgresql {
+          name = "second";
+          env = { };
+          aliases.PGHOST = "127.0.0.1";
+        })
+      ];
+    });
+    expected = true;
+  };
+  testTestCheckRejectsClashWithCheck = {
+    expr = refuses (testCheck {
+      services = [ (postgresql { }) ];
+      env.PGUSER = "someone";
+    });
+    expected = true;
+  };
+  testServiceRejectsAliasOfItsOwnName = {
+    expr = refuses (postgresql {
+      aliases.PGPORT = "5432";
+    });
+    expected = true;
+  };
+  testShardRunnerRefusals = {
+    expr = map refuses [
+      (gleam.testRunners.shard {
+        index = 0;
+        count = 0;
+      })
+      (gleam.testRunners.shard {
+        index = 2;
+        count = 2;
+      })
+      (gleam.testRunners.shard {
+        index = 0;
+        count = 2;
+        pins.tested = 2;
+      })
+      (gleam.testRunners.shard {
+        index = 0;
+        count = 2;
+        setup = "no_function";
+      })
+      (gleam.testRunners.shard {
+        index = 0;
+        count = 2;
+      })
+    ];
+    expected = [
+      true
+      true
+      true
+      true
+      false
+    ];
+  };
+
+  testReleaseRejectsDevelopmentCompile = {
+    expr = refuses (
+      gleam.buildRelease {
+        project = tested;
+        inherit runtime;
+      }
+    );
+    expected = true;
+  };
+  testReleaseRejectsForeignRuntime = {
+    expr = refuses (
+      gleam.buildRelease {
+        project = gleam.importProject { src = ./fixtures/served; };
+        runtime = pkgs.hello;
+      }
+    );
+    expected = true;
+  };
+  testTrimErlangNeedsAnApplication = {
+    expr = refuses (gleam.trimErlang { without = [ ]; });
+    expected = true;
+  };
+  testImageRejectsRelativeHealthPath = {
+    expr = refuses (
+      gleam.buildImage {
+        release = gleam.buildRelease {
+          project = gleam.importProject { src = ./fixtures/served; };
+          inherit runtime;
+        };
+        name = "served";
+        port = 8080;
+        health = "health";
+        user = "app";
+      }
+    );
+    expected = true;
+  };
+
+  testImportProjectStaysErlangOnly = {
+    expr = refuses (gleam.importProject { src = ./fixtures/frontend; }).package;
+    expected = true;
+  };
+  testJavascriptRejectsErlangTarget = {
+    expr = refuses (gleam.buildJavascriptPackage { src = ./fixtures/served; });
+    expected = true;
+  };
+  # The remaining refusals sit in the build script, so force the derivation.
+  testJavascriptRejectsHexWithoutChecksum = {
+    expr = refuses (frontend { manifest = ./manifests/javascript-no-checksum.toml; }).drvPath;
+    expected = true;
+  };
+  testJavascriptRejectsGitWithoutOverride = {
+    expr = refuses (frontend { manifest = ./manifests/javascript-git.toml; }).drvPath;
+    expected = true;
+  };
+  testJavascriptRejectsLocalDependency = {
+    expr = refuses (frontend {
+      manifest = ./manifests/javascript-local.toml;
+    });
+    expected = true;
+  };
+  testJavascriptAcceptsGitWithOverride = {
+    expr =
+      refuses
+        (frontend {
+          manifest = ./manifests/javascript-git.toml;
+          sourceOverrides.from_git = ./fixtures/shared_lib;
+        }).drvPath;
+    expected = false;
+  };
+
   testGitSourcesAvoidEvaluationFetch = {
     expr = (builtins.tryEval (gitConsumer gitHashes).package.drvPath).success;
     expected = true;
