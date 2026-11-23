@@ -5,6 +5,7 @@
   nodejs,
   beamPackages,
   readManifest,
+  xxHash,
 }:
 # Builds a Gleam project for the JavaScript target and runs its tests with
 # Node. It is a separate entry point: nothing in the Erlang graph depends on it.
@@ -17,6 +18,7 @@
   sourceOverrides ? { },
   nodeModules ? null,
   doCheck ? true,
+  warningsAsErrors ? true,
   ...
 }@args:
 let
@@ -35,11 +37,24 @@ let
       }
     else
       throw "gleam-nix: buildJavascriptPackage needs sourceOverrides.${package.name} for its ${package.source} source.";
-  downloaded = locked.packages;
-  # Gleam resolves versions again, online, whenever a JavaScript project has a
-  # local path dependency, even with every package downloaded, so the
-  # sandboxed build cannot run.
-  local = builtins.filter (package: package.source == "local") locked.packages;
+  # Local packages stay at their locked paths; Gleam accepts them without
+  # resolving again when it finds the fingerprint of each one's gleam.toml.
+  local = builtins.filter (
+    package: package.source == "local" && !(sourceOverrides ? ${package.name})
+  ) locked.packages;
+  downloaded = builtins.filter (package: !(builtins.elem package local)) locked.packages;
+  outsideSource = builtins.filter (package: lib.hasPrefix "../" package.path) local;
+  # Gleam's index of downloaded packages, as `gleam deps download` writes it.
+  index = lib.concatStrings (
+    [ "[packages]\n" ]
+    ++ map (package: "${package.name} = \"${package.version}\"\n") (
+      lib.sort (a: b: a.name < b.name) locked.packages
+    )
+    ++ [ "\n[git]\n" ]
+    ++ map (package: "\n[git.${package.name}]\ncommit = \"${package.commit}\"\n") (
+      builtins.filter (package: package.source == "git") downloaded
+    )
+  );
   # Development packages and the root's test modules stay out of the output.
   testModules = lib.optionals (builtins.pathExists (src + "/test")) (
     map
@@ -68,14 +83,11 @@ let
     "manifest"
     "sourceOverrides"
     "nodeModules"
+    "warningsAsErrors"
   ];
 in
 if (config.target or "erlang") != "javascript" then
   throw "gleam-nix: buildJavascriptPackage needs a project whose gleam.toml sets target = \"javascript\"."
-else if local != [ ] then
-  throw "gleam-nix: buildJavascriptPackage cannot build local path dependencies, because Gleam then resolves versions online: ${
-    lib.concatMapStringsSep ", " (package: package.name) local
-  }."
 else
   stdenvNoCC.mkDerivation (
     standardArgs
@@ -86,31 +98,42 @@ else
       nativeBuildInputs = [
         gleam
         nodejs
+        xxHash
       ]
       ++ (args.nativeBuildInputs or [ ]);
       strictDeps = true;
       dontConfigure = true;
 
+      postUnpack =
+        (args.postUnpack or "")
+        + lib.concatMapStrings (package: ''
+          mkdir -p "$(dirname "$sourceRoot/${package.path}")"
+          cp -R ${src + "/${package.path}"} "$sourceRoot/${package.path}"
+          chmod -R u+w "$sourceRoot/${package.path}"
+        '') outsideSource;
+
       buildPhase =
         args.buildPhase or ''
           runHook preBuild
           export HOME="$TMPDIR"
+          # Gleam builds with the selected manifest, not one src may carry.
+          rm -f manifest.toml
+          cp ${manifest} manifest.toml
           mkdir -p build/packages
           ${lib.concatMapStrings (package: ''
             cp -R ${sourceFor package} build/packages/${package.name}
             chmod -R u+w build/packages/${package.name}
           '') downloaded}
-          {
-            echo "[packages]"
-            # Gleam's record of downloaded packages; a missing one makes it resolve.
-            ${lib.concatMapStrings (package: ''
-              echo '${package.name} = "${package.version}"'
-            '') locked.packages}
-          } > build/packages/packages.toml
+          # A missing entry makes Gleam resolve versions online.
+          printf %s ${lib.escapeShellArg index} > build/packages/packages.toml
+          ${lib.concatMapStrings (package: ''
+            hash=$(xxhsum -H3 ${lib.escapeShellArg "${package.path}/gleam.toml"} | cut -d' ' -f1 | cut -d_ -f2)
+            printf '%u' "0x$hash" > build/packages/${package.name}.config_fingerprint
+          '') local}
           ${lib.optionalString (nodeModules != null) ''
             ln -s ${nodeModules}/node_modules node_modules
           ''}
-          gleam build --target javascript
+          gleam build --target javascript ${lib.optionalString warningsAsErrors "--warnings-as-errors"}
           runHook postBuild
         '';
 
@@ -124,7 +147,8 @@ else
       installPhase =
         args.installPhase or ''
           runHook preInstall
-          cp -R build/dev/javascript "$out"
+          # Packages' priv directories are links into the build tree.
+          cp -RL build/dev/javascript "$out"
           chmod -R u+w "$out"
           rm -rf "$out/gleam.lock" ${lib.concatMapStringsSep " " (name: ''"$out"/${name}'') developmentOnly}
           for module in ${lib.escapeShellArgs testModules}; do

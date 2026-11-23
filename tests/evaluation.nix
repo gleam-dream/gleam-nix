@@ -348,6 +348,46 @@ lib.runTests {
     expected = true;
   };
 
+  testImageRejectsRootUser = {
+    expr = map refuses [
+      (gleam.buildImage {
+        release = gleam.buildRelease {
+          project = gleam.importProject { src = ./fixtures/served; };
+          inherit runtime;
+        };
+        name = "served";
+        port = 8080;
+        health = "/health";
+        user = "app";
+        uid = 0;
+      })
+      (gleam.buildImage {
+        release = gleam.buildRelease {
+          project = gleam.importProject { src = ./fixtures/served; };
+          inherit runtime;
+        };
+        name = "served";
+        port = 8080;
+        health = "/health";
+        user = "root";
+      })
+    ];
+    expected = [
+      true
+      true
+    ];
+  };
+  testReleaseRejectsPrivOutsideItsDirectory = {
+    expr = refuses (
+      gleam.buildRelease {
+        project = gleam.importProject { src = ./fixtures/served; };
+        inherit runtime;
+        priv."../escape" = pkgs.emptyDirectory;
+      }
+    );
+    expected = true;
+  };
+
   testImportProjectStaysErlangOnly = {
     expr = refuses (gleam.importProject { src = ./fixtures/frontend; }).package;
     expected = true;
@@ -363,12 +403,6 @@ lib.runTests {
   };
   testJavascriptRejectsGitWithoutOverride = {
     expr = refuses (frontend { manifest = ./manifests/javascript-git.toml; }).drvPath;
-    expected = true;
-  };
-  testJavascriptRejectsLocalDependency = {
-    expr = refuses (frontend {
-      manifest = ./manifests/javascript-local.toml;
-    });
     expected = true;
   };
   testJavascriptAcceptsGitWithOverride = {

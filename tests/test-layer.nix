@@ -88,6 +88,28 @@ let
       expr = lib.unique (map (check: check.compiled.drvPath) (sharded ++ [ default ]));
       expected = [ default.compiled.drvPath ];
     };
+    # Only what the build and the tests read is an input: a README or a docs
+    # directory edit rebuilds neither the test check nor the root package.
+    testDocumentationLeavesChecksCached = {
+      expr = map (name: (gleam.mkTestCheck { project = without name; }).drvPath) [
+        "tested/README.md"
+        "tested/docs/notes.md"
+      ];
+      expected = [
+        default.drvPath
+        default.drvPath
+      ];
+    };
+    testDocumentationLeavesPackageCached = {
+      expr = map (name: (without name).package.drvPath) [
+        "tested/README.md"
+        "tested/docs/notes.md"
+      ];
+      expected = [
+        tested.package.drvPath
+        tested.package.drvPath
+      ];
+    };
     testAgentDocumentsLeaveChecksCached = {
       expr = withoutAgents.drvPath;
       expected = default.drvPath;

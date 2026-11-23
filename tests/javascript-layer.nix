@@ -8,7 +8,7 @@ let
     src = ./fixtures/frontend;
     # The fixture's tests fail when the greeting changes.
     postPatch = ''
-      substituteInPlace src/frontend.gleam --replace-fail HELLO hello
+      substituteInPlace src/frontend.gleam --replace-fail "js_widgets.label()" "js_widgets.label() <> \"!\""
     '';
   };
   runtime = gleam.trimErlang { without = [ "wx" ]; };
@@ -55,8 +55,35 @@ in
         test ! -e ${frontend}/gleeunit
         # So does gleam_stdlib, which only the development dependency needs.
         test ! -e ${frontend}/gleam_stdlib
+        # The local dependency ships, with its priv directory resolved, not a
+        # link into the build tree.
+        test ! -L ${frontend}/js_widgets/priv
+        grep -Fx 'widget asset' ${frontend}/js_widgets/priv/widget.txt
         touch "$out"
       '';
+
+  # The manifest argument is the one Gleam builds with, not src's own.
+  javascript-external-manifest = gleam.buildJavascriptPackage {
+    src =
+      /.
+      + builtins.unsafeDiscardStringContext (
+        builtins.path {
+          path = ./fixtures;
+          name = "fixtures-without-frontend-manifest";
+          filter = path: _: !(lib.hasSuffix "frontend/manifest.toml" path);
+        }
+      )
+      + "/frontend";
+    manifest = ./fixtures/frontend/manifest.toml;
+  };
+
+  # Warnings fail the frontend's build, as they fail a test check.
+  javascript-warnings = failsWith "javascript-warnings" (gleam.buildJavascriptPackage {
+    src = ./fixtures/frontend;
+    postPatch = ''
+      printf '\nfn unused() -> Int {\n  1\n}\n' >> src/frontend.gleam
+    '';
+  }) [ "Unused private function" ];
 
   javascript-failing-tests = failsWith "javascript-failing-tests" failing [
     "frontend_test.greeting_test"

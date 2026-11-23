@@ -3,6 +3,7 @@ version = "0.1.0"
 target = "javascript"
 
 [dependencies]
+js_widgets = { path = "../js_widgets" }
 
 [dev-dependencies]
 gleeunit = ">= 1.0.0 and < 2.0.0"

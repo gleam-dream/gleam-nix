@@ -3,6 +3,7 @@
   stdenvNoCC,
   writeText,
   cacert,
+  gleamSource,
   warningsGate,
   testSupport,
   testRunners,
@@ -30,27 +31,18 @@ let
       )
     );
 
-  # A directory minus its build outputs and agent documents.
+  # What a package's build and tests read, minus agent documents: the root
+  # with its tests, each local dependency without them.
   checkInputs =
-    directory:
-    lib.fileset.difference directory (
-      lib.fileset.unions (
-        [
-          (lib.fileset.fileFilter (
-            file:
-            builtins.elem file.name [
-              "AGENTS.md"
-              "CLAUDE.md"
-            ]
-          ) directory)
+    directory: includeTest:
+    lib.fileset.difference (gleamSource { inherit directory includeTest; }) (
+      lib.fileset.fileFilter (
+        file:
+        builtins.elem file.name [
+          "AGENTS.md"
+          "CLAUDE.md"
         ]
-        ++ map (name: lib.fileset.maybeMissing (directory + "/${name}")) [
-          "build"
-          "_build"
-          "node_modules"
-          ".direnv"
-        ]
-      )
+      ) directory
     );
 
   # Names the check itself sets; a service cannot claim them.
@@ -86,7 +78,9 @@ let
     [
       (
         if inputs == null then
-          lib.fileset.unions (map checkInputs ([ project.src ] ++ localPaths))
+          lib.fileset.unions (
+            [ (checkInputs project.src true) ] ++ map (path: checkInputs path false) localPaths
+          )
         else
           inputs
       )

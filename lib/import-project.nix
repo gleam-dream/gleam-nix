@@ -5,6 +5,7 @@
   readManifest,
   buildGleamPackage,
   cleanSource,
+  gleamSource,
 }:
 {
   src,
@@ -161,7 +162,19 @@ let
     {
       pname = config.name;
       version = config.version or "0.1.0";
-      inherit src includeDev;
+      inherit includeDev;
+      # Only what the build reads, so a README or docs edit rebuilds nothing.
+      src =
+        if builtins.isPath src then
+          lib.fileset.toSource {
+            root = src;
+            fileset = gleamSource {
+              directory = src;
+              includeTest = includeDev;
+            };
+          }
+        else
+          src;
       beamDeps = map (name: packages.${name}) rootNames;
     }
     // packageArgs

@@ -112,6 +112,50 @@ in
     touch "$out"
   '';
 
+  # The runtime contract an adopter can set: a chosen non-root uid and gid, a
+  # working directory, extra packages, and files in the root's priv.
+  release-image-contract =
+    let
+      web = pkgs.runCommand "web" { } ''
+        mkdir -p "$out"
+        echo shell > "$out/index.html"
+      '';
+      contracted = gleam.buildImage {
+        release = gleam.buildRelease {
+          project = served;
+          inherit runtime;
+          priv.web = web;
+        };
+        name = "contracted";
+        port = 8080;
+        health = "/health";
+        user = "service";
+        uid = 10001;
+        gid = 10001;
+        workingDir = "/app";
+        contents = [ pkgs.hello ];
+      };
+    in
+    pkgs.runCommand "gleam-nix-release-image-contract"
+      {
+        nativeBuildInputs = [ pkgs.jq ];
+      }
+      ''
+        grep -Fx shell ${contracted.release}/lib/served-0.1.0/priv/web/index.html
+        mkdir image
+        tar -xzf ${contracted} -C image manifest.json
+        config=image/$(jq -r '.[0].Config' image/manifest.json)
+        tar -xzf ${contracted} -C image "''${config#image/}"
+        test "$(jq -r '.config.User' "$config")" = 10001:10001
+        test "$(jq -r '.config.WorkingDir' "$config")" = /app
+        # Extra packages are in the image's layers.
+        for layer in $(jq -r '.[0].Layers[]' image/manifest.json); do
+          tar -xzf ${contracted} -O "$layer" | tar -t
+        done > files
+        grep -q -- '-hello-' files
+        touch "$out"
+      '';
+
   release-boots =
     pkgs.runCommand "gleam-nix-release-boots"
       {
@@ -147,7 +191,7 @@ in
         config=$(jq -r '.[0].Config' image/manifest.json)
         tar -xzf ${image} -C image "$config"
         config=image/$config
-        test "$(jq -r '.config.User' "$config")" = app
+        test "$(jq -r '.config.User' "$config")" = 1000:1000
         mapfile -t entrypoint < <(jq -r '.config.Entrypoint[]' "$config")
         mapfile -t environment < <(jq -r '.config.Env[]' "$config" | sed 's|^PATH=.*|PATH=${pkgs.busybox}/bin|')
         mapfile -t health < <(jq -r '.config.Healthcheck.Test[1:][]' "$config")

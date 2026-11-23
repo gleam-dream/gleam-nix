@@ -4,7 +4,6 @@
   perl,
   busybox,
   beam,
-  cleanSource,
   warningsGate,
 }:
 # A release of the project's dependency outputs and a production compile of its
@@ -12,20 +11,15 @@
 {
   project,
   runtime,
+  # Files the root application finds under its priv directory at run time,
+  # such as a built frontend: { web = frontend; } is priv/web.
+  priv ? { },
 }:
 let
-  # Gleam's package compiler compiles Erlang files under test/ even without
-  # development code, so the release compiles a source without test/.
-  productionSource = lib.cleanSourceWith {
-    src = cleanSource project.src;
-    filter = path: type: !(type == "directory" && path == toString (project.src + "/test"));
-  };
-  root = warningsGate "its release" (
-    if builtins.pathExists (project.src + "/test") then
-      project.package.override { src = productionSource; }
-    else
-      project.package
-  );
+  # importProject leaves test/ out of a production root's source: Gleam's
+  # package compiler would compile its Erlang files even without development
+  # code. The check below still guards what ships.
+  root = warningsGate "its release" project.package;
   app = root.otpAppName;
   packageName = root.gleamPackageName;
   testsErlang = root.erlangCompiler;
@@ -52,7 +46,13 @@ let
       )
   );
 in
-if root.includeDev then
+if
+  builtins.any (name: name == "" || lib.hasInfix "/" name || name == "." || name == "..") (
+    lib.attrNames priv
+  )
+then
+  throw "gleam-nix: buildRelease priv entries name one directory or file inside priv: ${lib.concatStringsSep ", " (lib.attrNames priv)}."
+else if root.includeDev then
   throw "gleam-nix: buildRelease needs a project imported without includeDev; development code never ships."
 else if original.outPath != testsErlang.outPath then
   throw "gleam-nix: buildRelease needs a runtime derived from the Erlang the project compiled with (${testsErlang.name})."
@@ -80,6 +80,19 @@ else
         done
       '') libraries}
       chmod -R u+w "$out/lib"
+
+      ${lib.concatStrings (
+        lib.mapAttrsToList (name: source: ''
+          rootPriv="$out/lib/${app}-${root.version}/priv"
+          mkdir -p "$rootPriv"
+          if [ -e "$rootPriv/${name}" ]; then
+            echo "gleam-nix: priv/${name} already exists in ${packageName}." >&2
+            exit 1
+          fi
+          cp -RL ${source} "$rootPriv/${name}"
+          chmod -R u+w "$rootPriv/${name}"
+        '') priv
+      )}
 
       # No test module ships: the root compiled without its development code.
       for module in ${lib.escapeShellArgs testModules}; do

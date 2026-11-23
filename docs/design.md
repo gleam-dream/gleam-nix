@@ -218,8 +218,12 @@ Equivalent dependencies across projects have equal derivation paths.
 Dependency ordering does not affect the derivation path.
 Changing application code changes the application derivation while leaving its
 dependency derivations unchanged. Changing a dependency invalidates its consumers.
-Local path inputs exclude `build`, `_build`, `node_modules`, and `.direnv`
-directories only at the source root. Nested source namespaces and resources
+A root given as a local path contributes only what its build reads:
+`gleam.toml`, `manifest.toml`, `src`, `priv` and `include`, and `test` with
+`includeDev`. A README or docs edit therefore leaves the root package cached,
+and a production root never compiles `test/`. Local path inputs exclude
+`build`, `_build`, `node_modules`, and `.direnv` directories only at the source
+root. Nested source namespaces and resources
 with these names remain intact. Local inputs also use Nixpkgs' standard clean
 source filter.
 Prepared source objects and store-context strings are kept opaque during evaluation.
@@ -291,10 +295,12 @@ The test layer supports Gleam 1.19.
   the project's production dependencies, so they are built once and shared
   across checks, apps and repositories.
 - **Explicit inputs.** A check's source is an explicit fileset. By default it is
-  the app's directory plus the local paths its manifest names, minus build
-  directories and agent documents such as `AGENTS.md` and `CLAUDE.md`. The
-  adopter adds shared extras by name. An edit outside a check's inputs leaves
-  that check cached.
+  what the build and tests read: the app's `gleam.toml`, `manifest.toml`,
+  `src`, `priv`, `include` and `test`, and the same without `test` for each
+  local path its manifest names, minus agent documents such as `AGENTS.md`
+  and `CLAUDE.md`. A README or docs edit is outside it. The adopter adds files
+  its tests read by name, through `extraInputs`. An edit outside a check's
+  inputs leaves that check cached.
 - **Warnings are errors, in Gleam and Erlang alike.** Erlang sources compile
   with warnings as errors against the compiled dependencies. Gleam's package
   compiler has no such flag, so the Gleam half reads the compiler's output for
@@ -413,15 +419,19 @@ checked derivative of the Erlang the tests ran on.
 
 - `trimErlang { without; }` copies the scope's cached Erlang and removes the
   listed OTP applications. It keeps the original as `original`.
-- `buildRelease { project; runtime; }` assembles a release from the project's
-  dependency outputs and a production compile of the root, on the given
-  runtime. `project` is imported without `includeDev`, and `runtime` is the
-  project's Erlang or a trim of it. `bin/<package>` starts the root through
-  Gleam's own entry module, as `gleam run` does.
-- `buildImage { release; name; port; health; user; assets ? null; tag ? null;
-labels ? {}; env ? {}; }` builds an OCI image with Nixpkgs' `dockerTools`.
-  `user` runs as UID 1000, `PORT` and `SSL_CERT_FILE` are set, and `assets`
-  is named by `ASSETS_DIR`.
+- `buildRelease { project; runtime; priv ? {}; }` assembles a release from the
+  project's dependency outputs and a production compile of the root, on the
+  given runtime. `project` is imported without `includeDev`, and `runtime` is
+  the project's Erlang or a trim of it. `priv` maps a name to files the root
+  application finds under its `priv` directory, such as `{ web = frontend; }`
+  for `priv/web`. `bin/<package>` starts the root through Gleam's own entry
+  module, as `gleam run` does.
+- `buildImage { release; name; port; health; user; uid ? 1000; gid ? uid;
+workingDir ? "/home/<user>"; contents ? []; assets ? null; tag ? null; labels
+? {}; env ? {}; }` builds an OCI image with Nixpkgs' `dockerTools`. It runs as
+  `uid:gid`, which must not be root, from `workingDir`. `contents` adds
+  packages, such as tools for an operator's shell. `PORT` and `SSL_CERT_FILE`
+  are set, and `assets` is named by `ASSETS_DIR`.
 
 **Invariants.** Each assertion lives in the step that can break it.
 
@@ -432,8 +442,8 @@ labels ? {}; env ? {}; }` builds an OCI image with Nixpkgs' `dockerTools`.
   the tests. References to the original Erlang are rewritten to the runtime.
   No application in the service's `.app` dependency closure needs a removed
   application, and no development module ships. Gleam's package compiler
-  compiles Erlang files under `test/` even without development code, so the
-  release compiles the root from its source without `test/`.
+  compiles Erlang files under `test/` even without development code, so a
+  production root's source leaves `test/` out ([D4](#d4-cache-identity)).
 - **`buildImage`.** The image carries a runtime contract: a non-root user, CA
   certificates, a shell and an HTTP client for the health check, and an
   entrypoint. Its closure, binaries included, holds no untrimmed Erlang.
@@ -452,14 +462,17 @@ This entry point is unstable ([Stability](#stability)).
 
 **Interface.** `buildJavascriptPackage { src; manifest ? src +
 "/manifest.toml"; sourceOverrides ? {}; nodeModules ? null; doCheck ? true;
-... }` builds a Gleam project for the JavaScript target and runs its tests with
+warningsAsErrors ? true; ... }` builds a Gleam project for the JavaScript target and runs its tests with
 Node. Its npm dependencies come from a separate npm derivation
 ([D6](#d6-composition)), whose `node_modules` it links as `nodeModules`. Its
 output is Gleam's JavaScript build tree without test modules or any package
-outside the runtime dependency closure, and it can be an image's `assets`. A
-local path dependency fails evaluation: Gleam resolves versions online whenever
-a JavaScript project has one, so the sandboxed build cannot run. Other non-Hex
-sources come through `sourceOverrides`. Ordinary derivation attributes and
+outside the runtime dependency closure, and it can be an image's `assets`. Local
+path dependencies build in place: the build records each one's `gleam.toml`
+fingerprint where Gleam looks for it, so Gleam does not resolve versions again
+offline. Git sources come through `sourceOverrides`, with their locked commits
+recorded as Gleam records them. The build uses the `manifest` argument, not a
+manifest `src` may carry, fails on warnings unless `warningsAsErrors = false`,
+and resolves links such as packages' `priv` directories in its output. Ordinary derivation attributes and
 hooks pass through.
 
 Hex sources are fetched as `importProject` fetches them, as separate

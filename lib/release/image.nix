@@ -16,30 +16,37 @@
   port,
   health,
   user,
+  # A non-root identity; adopters with a fixed contract choose their own.
+  uid ? 1000,
+  gid ? uid,
+  workingDir ? "/home/${user}",
+  # Further packages in the image, such as tools for an operator's shell.
+  contents ? [ ],
   assets ? null,
   tag ? null,
   labels ? { },
   env ? { },
 }:
 let
-  uid = "1000";
   home = "/home/${user}";
+  owner = "${toString uid}:${toString gid}";
   certificates = "${cacert}/etc/ssl/certs/ca-bundle.crt";
   accounts = [
     (writeTextDir "etc/passwd" ''
       root:x:0:0::/root:/bin/sh
-      ${user}:x:${uid}:${uid}::${home}:/bin/sh
+      ${user}:x:${toString uid}:${toString gid}::${home}:/bin/sh
     '')
     (writeTextDir "etc/group" ''
       root:x:0:
-      ${user}:x:${uid}:
+      ${user}:x:${toString gid}:
     '')
   ];
-  contents = [
+  imageContents = [
     release
     busybox
     cacert
   ]
+  ++ contents
   ++ accounts
   ++ lib.optional (assets != null) assets;
   environment = {
@@ -52,15 +59,16 @@ let
   // lib.optionalAttrs (assets != null) { ASSETS_DIR = "${assets}"; }
   // env;
   raw = dockerTools.buildLayeredImage {
-    inherit name tag contents;
+    inherit name tag;
+    contents = imageContents;
     fakeRootCommands = ''
-      mkdir -p .${home} tmp
-      chown ${uid}:${uid} .${home}
+      mkdir -p .${home} .${workingDir} tmp
+      chown ${owner} .${home} .${workingDir}
       chmod 1777 tmp
     '';
     config = {
-      User = user;
-      WorkingDir = home;
+      User = owner;
+      WorkingDir = workingDir;
       Entrypoint = [ "${release}/bin/${release.packageName}" ];
       Env = lib.mapAttrsToList (key: value: "${key}=${value}") environment;
       ExposedPorts."${toString port}/tcp" = { };
@@ -80,10 +88,14 @@ let
       Labels = labels;
     };
   };
-  closure = closureInfo { rootPaths = contents; };
+  closure = closureInfo { rootPaths = imageContents; };
   untrimmed = release.runtime.original or null;
 in
-if !(lib.hasPrefix "/" health) then
+if !(builtins.isInt uid) || !(builtins.isInt gid) || uid < 1 || gid < 1 || user == "root" then
+  throw "gleam-nix: buildImage runs as a non-root user: uid and gid must be positive integers and user not root."
+else if !(lib.hasPrefix "/" workingDir) then
+  throw "gleam-nix: buildImage workingDir must be an absolute path, not ${workingDir}."
+else if !(lib.hasPrefix "/" health) then
   throw "gleam-nix: buildImage health must be a path such as /health, not ${health}."
 else
   runCommand "${name}-image"

@@ -232,10 +232,14 @@ in
   `gleam test` does, from a copy of your source. The shard runner splits the
   test modules by a hash of their names, so adding a module moves no other;
   setup from your test `main` moves into its `setup` function, and `pins`
-  places a module in a chosen shard. All shards share one compile.
-- **Inputs.** A check's source is the app's directory and its local
-  dependencies, without build directories, `AGENTS.md` or `CLAUDE.md`. Add
-  shared files with `extraInputs`.
+  places a module in a chosen shard. All shards share one compile. Sharding
+  splits by module: a suite whose time sits in one slow module gains nothing,
+  since that module still runs whole in one shard. Read each module's time in
+  a check's `report` before choosing a shard count.
+- **Inputs.** A check's source is what its build and tests read: `gleam.toml`,
+  `manifest.toml`, `src`, `priv`, `include` and `test`, and the same for its
+  local dependencies, without `AGENTS.md` or `CLAUDE.md`. A README or docs edit
+  reruns nothing. Add other files your tests read with `extraInputs`.
 - **Services** start with a fresh port and state directory per check, so each
   shard has its own database. Two services, or a service and the check, that
   set the same variable fail evaluation. A failing check prints each service's
@@ -279,8 +283,13 @@ gleam.buildImage {
 - `buildImage` adds a non-root user, CA certificates, BusyBox for a shell and
   the health check's HTTP client, and an entrypoint. It fails if any file in
   its closure, binaries included, still names the untrimmed Erlang.
-- The image reads `PORT`; pass a frontend's output as `assets` and read its
-  path from `ASSETS_DIR`.
+- The user runs as UID and GID 1000 from its home; set `uid`, `gid` and
+  `workingDir` for another contract (root is refused), and add packages, such
+  as tools for an operator's shell, with `contents`.
+- The image reads `PORT`. Pass a frontend's output as `assets` and read its
+  path from `ASSETS_DIR`, or place it in the root application's `priv` with
+  `buildRelease { priv.web = frontend; }` and read it through
+  `application:priv_dir`.
 
 ## Build a Gleam frontend
 
@@ -395,9 +404,8 @@ backend on asset edits. Compiled Gleam dependencies remain independent either wa
   dependencies; `mkTestCheck` runs them.
 - Flake outputs cover x86-64 Linux, ARM64 Linux and ARM64 macOS. Test checks,
   releases and images are Linux only. Cross compilation stays outside this
-  library. A frontend's packages come from Hex or `sourceOverrides`; a local
-  path dependency fails evaluation, because Gleam then resolves versions
-  online.
+  library. A frontend's packages come from Hex, local paths or
+  `sourceOverrides`.
 
 ## Examples and reference
 
