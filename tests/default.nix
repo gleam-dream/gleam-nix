@@ -57,6 +57,7 @@ in
 pkgs.lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux (
   import ./test-layer.nix { inherit pkgs gleam; }
   // import ./release-layer.nix { inherit pkgs gleam; }
+  // import ./javascript-layer.nix { inherit pkgs gleam; }
 )
 // {
   formatting =

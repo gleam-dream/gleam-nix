@@ -17,13 +17,12 @@ Nix owns local store reuse and sharing through configured binary caches.
 
 ## Scope
 
-The library builds packages, [test checks](#test-a-project), and a
-[release and image](#ship-an-image) on Linux. The release and image layer is
-unstable. Its [design](docs/design.md) also accepts two more modules on the
-same package graph. They aren't built yet:
+The library builds packages, [test checks](#test-a-project), a
+[release and image](#ship-an-image), and a
+[Gleam frontend](#build-a-gleam-frontend) on Linux. The release, image and
+frontend are unstable. Its [design](docs/design.md) also accepts one more
+module on the same package graph. It isn't built yet:
 
-- **JavaScript** builds and tests a Gleam frontend as a separate entry point.
-  This entry point is unstable.
 - **CI** is three vendor-neutral commands, `plan`, `build` and `verify`, so a
   run builds only the checks whose inputs changed. The cache backend is a
   replaceable adapter (GitHub Actions cache, Cachix, Attic, or a store local to
@@ -202,6 +201,38 @@ gleam.buildImage {
 - The image reads `PORT`; pass a frontend's output as `assets` and read its
   path from `ASSETS_DIR`.
 
+## Build a Gleam frontend
+
+`buildJavascriptPackage` builds a project whose `gleam.toml` sets
+`target = "javascript"` and runs its tests with Node. Its output, the compiled
+JavaScript tree without test code, can be an image's `assets`:
+
+```nix
+let
+  frontend = gleam.buildJavascriptPackage {
+    src = ./frontend;
+    # Optional: npm dependencies from their own derivation.
+    nodeModules = pkgs.importNpmLock.buildNodeModules {
+      npmRoot = ./frontend;
+      inherit (pkgs) nodejs;
+    };
+  };
+in
+gleam.buildImage {
+  inherit release;
+  name = "my-service";
+  port = 8080;
+  health = "/health";
+  user = "app";
+  assets = frontend;
+}
+```
+
+The frontend is its own derivation: editing it rebuilds the frontend and the
+image, never the backend. Its locked Hex packages are fetched as separate
+derivations and compiled in one offline `gleam build`. This entry point is
+unstable.
+
 ## How caching works
 
 Each Gleam package compiles against its resolved dependencies with
@@ -259,7 +290,8 @@ backend on asset edits. Compiled Gleam dependencies remain independent either wa
   dependencies; `mkTestCheck` runs them.
 - Flake outputs cover x86-64 Linux, ARM64 Linux and ARM64 macOS. Test checks,
   releases and images are Linux only. Cross compilation stays outside this
-  library, and JavaScript compilation waits on its module.
+  library. A frontend's packages come from Hex, local paths or
+  `sourceOverrides`.
 
 ## Examples and reference
 

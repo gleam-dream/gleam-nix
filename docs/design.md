@@ -453,10 +453,20 @@ without its filesystem.
 
 This entry point is unstable ([Stability](#stability)).
 
-**Interface.** `buildJavascriptPackage { src; ... }` builds a Gleam project for
-the JavaScript target and runs its tests with Node. Its npm dependencies come
-from a separate npm derivation ([D6](#d6-composition)). Its output can be an
-image's `assets`.
+**Interface.** `buildJavascriptPackage { src; manifest ? src +
+"/manifest.toml"; sourceOverrides ? {}; nodeModules ? null; doCheck ? true;
+... }` builds a Gleam project for the JavaScript target and runs its tests with
+Node. Its npm dependencies come from a separate npm derivation
+([D6](#d6-composition)), whose `node_modules` it links as `nodeModules`. Its
+output is Gleam's JavaScript build tree without test modules or development
+packages, and it can be an image's `assets`. Ordinary derivation attributes and
+hooks pass through.
+
+Hex sources are fetched as `importProject` fetches them, as separate
+derivations, and laid out where Gleam looks for downloaded packages, so one
+`gleam build` and `gleam test` per frontend run offline. Unlike the Erlang
+graph, the frontend's Gleam dependencies compile inside that one derivation; a
+frontend is one check, and per-package outputs wait for a second user.
 
 **Invariants.** It is a separate entry point: `importProject` keeps its
 Erlang-only guard, and nothing in the Erlang graph depends on the frontend. A
@@ -571,6 +581,7 @@ warnings gate that the test check and the release share, and
 `lib/gleam-main.erl` the entry module both start through. `lib/test/` owns test
 checks, runners, services and coverage, with the Erlang modules its runners
 load. `lib/release/` owns the trimmed runtime, the release and the image.
+`lib/javascript.nix` owns the JavaScript entry point.
 Each new module owns one concern and depends only on the package layer's
 public interface: Git sources, test checks with their runners, services, the
 release and image, and the JavaScript entry point. The CI layer sits apart from

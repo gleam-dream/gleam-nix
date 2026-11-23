@@ -24,4 +24,7 @@ pkgs.lib.makeScope pkgs.newScope (self: {
   trimErlang = self.callPackage ./release/trim-erlang.nix { };
   buildRelease = self.callPackage ./release/release.nix { };
   buildImage = self.callPackage ./release/image.nix { };
+
+  # JavaScript entry point (D11). Unstable.
+  buildJavascriptPackage = self.callPackage ./javascript.nix { };
 })

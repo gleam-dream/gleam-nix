@@ -8,7 +8,7 @@
 | BEAM and frontend composition                | captured           | [D6](design.md#d6-composition)                                                               |
 | Test checks, runners and services            | captured           | [D7 to D9](design.md#d7-test-checks)                                                         |
 | Release and image                            | captured, unstable | [D10](design.md#d10-release-and-image)                                                       |
-| Gleam JavaScript packages                    | designed, unstable | [D11](design.md#d11-javascript-packages)                                                     |
+| Gleam JavaScript packages                    | captured, unstable | [D11](design.md#d11-javascript-packages)                                                     |
 | CI commands and cache adapters               | designed           | [D12 and D13](design.md#d12-ci-commands)                                                     |
 | Flake entry points and checks                | standard           | Conventional Nix flake exports and executable checks                                         |
 | Rebar3, Mix, npm, cross compilation, deploys | out-of-scope       | Existing builders compose through the public package boundary; deploys stay with the adopter |
