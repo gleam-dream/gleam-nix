@@ -324,10 +324,12 @@ gleam.buildImage {
 ```
 
 The frontend is its own derivation: editing it rebuilds the frontend and the
-image, never the backend. Like a test check, it reads only `gleam.toml`,
-`manifest.toml`, `src`, `priv`, `include`, `test`, `dev` and its local
-packages, so a README or agent document edit rebuilds nothing. Its locked Hex packages are fetched as separate
-derivations and compiled in one offline `gleam build`. This entry point is
+image, and not the backend as long as the frontend's files sit outside the
+backend's own inputs, such as its `src` or `priv`. Like a test check, it reads
+only `gleam.toml`, `manifest.toml`, `src`, `priv`, `include`, `test`, `dev` and
+its local packages, so a README or agent document edit rebuilds nothing. Its
+locked Hex packages are fetched as separate derivations and compiled in one
+offline `gleam build`. This entry point is
 unstable.
 
 ## Use it in CI

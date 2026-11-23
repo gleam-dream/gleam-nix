@@ -434,6 +434,16 @@ lib.runTests {
       2
     ];
   };
+  # An overridden local package needs no original at its locked path.
+  testJavascriptAcceptsLocalOverrideWithoutOriginal = {
+    expr =
+      refuses
+        (frontend {
+          manifest = ./manifests/javascript-overridden-local.toml;
+          sourceOverrides.js_widgets = ./fixtures/js_widgets_override;
+        }).drvPath;
+    expected = false;
+  };
   testJavascriptAcceptsGitWithOverride = {
     expr =
       refuses

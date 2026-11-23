@@ -496,7 +496,9 @@ frontend is one check, and per-package outputs wait for a second user.
 
 **Invariants.** It is a separate entry point: `importProject` keeps its
 Erlang-only guard, and nothing in the Erlang graph depends on the frontend. A
-frontend edit rebuilds the frontend and the image, never the backend.
+frontend edit rebuilds the frontend and the image, never the backend, as long
+as the frontend's files sit outside the backend's own inputs, such as its
+`src` or `priv` ([D4](#d4-cache-identity)).
 
 **Verification.** A fixture frontend builds and its tests pass under Node, and
 an image built with it as `assets` serves them.

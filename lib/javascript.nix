@@ -61,7 +61,8 @@ let
             })
           ]
           ++ map (package: gleamSource { directory = src + "/${package.path}"; }) (
-            builtins.filter (package: !(lib.hasPrefix "../" package.path)) local
+            # Overridden packages are staged from their overrides instead.
+            builtins.filter (package: !(builtins.elem package staged)) local
           )
         );
       }
