@@ -25,19 +25,24 @@ let
   ) shards;
 
   # The same fixture with one file left out, as a realized flake source.
-  without =
+  fixturesWithout =
     name:
-    import' (
-      /.
-      + builtins.unsafeDiscardStringContext (
-        builtins.path {
-          path = ./fixtures;
-          name = "fixtures-without-${baseNameOf name}";
-          filter = path: _: !(lib.hasSuffix name path);
-        }
-      )
-      + "/tested"
+    /.
+    + builtins.unsafeDiscardStringContext (
+      builtins.path {
+        path = ./fixtures;
+        name = "fixtures-without-${baseNameOf name}";
+        filter = path: _: !(lib.hasSuffix name path);
+      }
     );
+  without = name: import' (fixturesWithout name + "/tested");
+  productionWithout = name: gleam.importProject { src = fixturesWithout name + "/tested"; };
+  production = gleam.importProject { src = ./fixtures/tested; };
+  agentDocuments = [
+    "tested/src/AGENTS.md"
+    "tested/priv/agents/CLAUDE.md"
+    "tested/dev/AGENTS.md"
+  ];
   withoutAgents = gleam.mkTestCheck { project = without "tested/AGENTS.md"; };
   withoutAlpha = gleam.mkTestCheck { project = without "tested/test/tested/alpha_test.gleam"; };
 
@@ -90,6 +95,36 @@ let
     };
     # Only what the build and the tests read is an input: a README or a docs
     # directory edit rebuilds neither the test check nor the root package.
+    # Agent documents anywhere in the source are no input of the checks, the
+    # development compile, or the production compile the release ships.
+    testAgentDocumentsLeaveEverythingCached = {
+      expr = map (name: {
+        check = (gleam.mkTestCheck { project = without name; }).drvPath;
+        development = (without name).package.drvPath;
+        production = (productionWithout name).package.drvPath;
+      }) agentDocuments;
+      expected = map (_: {
+        check = default.drvPath;
+        development = tested.package.drvPath;
+        production = production.package.drvPath;
+      }) agentDocuments;
+    };
+    # extraInputs drop agent documents too.
+    testExtraInputsDropAgentDocuments = {
+      expr =
+        let
+          project = without "tested/docs/AGENTS.md";
+        in
+        (gleam.mkTestCheck {
+          inherit project;
+          extraInputs = [ (project.src + "/docs") ];
+        }).drvPath;
+      expected =
+        (gleam.mkTestCheck {
+          project = tested;
+          extraInputs = [ ./fixtures/tested/docs ];
+        }).drvPath;
+    };
     testDocumentationLeavesChecksCached = {
       expr = map (name: (gleam.mkTestCheck { project = without name; }).drvPath) [
         "tested/README.md"

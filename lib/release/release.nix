@@ -16,9 +16,9 @@
   priv ? { },
 }:
 let
-  # importProject leaves test/ out of a production root's source: Gleam's
-  # package compiler would compile its Erlang files even without development
-  # code. The check below still guards what ships.
+  # importProject leaves test/ and dev/ out of a production root's source:
+  # Gleam's package compiler would compile their Erlang files even without
+  # development code. The check below still guards what ships.
   root = warningsGate "its release" project.package;
   app = root.otpAppName;
   packageName = root.gleamPackageName;
@@ -26,25 +26,28 @@ let
   original = runtime.original or runtime;
   removed = runtime.without or [ ];
   libraries = beam.closure [ root ];
-  testDirectory = project.src + "/test";
-  testModules = lib.optionals (builtins.pathExists testDirectory) (
-    map
-      (
-        file:
-        let
-          relative = lib.removePrefix "${toString testDirectory}/" (toString file);
-        in
-        if lib.hasSuffix ".gleam" relative then
-          builtins.replaceStrings [ "/" ] [ "@" ] (lib.removeSuffix ".gleam" relative)
-        else
-          baseNameOf (lib.removeSuffix ".erl" relative)
-      )
-      (
-        builtins.filter (file: lib.hasSuffix ".gleam" file || lib.hasSuffix ".erl" file) (
-          map toString (lib.filesystem.listFilesRecursive testDirectory)
+  # Modules of the development code, test and dev, which must not ship.
+  modulesIn =
+    directory:
+    lib.optionals (builtins.pathExists directory) (
+      map
+        (
+          file:
+          let
+            relative = lib.removePrefix "${toString directory}/" (toString file);
+          in
+          if lib.hasSuffix ".gleam" relative then
+            builtins.replaceStrings [ "/" ] [ "@" ] (lib.removeSuffix ".gleam" relative)
+          else
+            baseNameOf (lib.removeSuffix ".erl" relative)
         )
-      )
-  );
+        (
+          builtins.filter (file: lib.hasSuffix ".gleam" file || lib.hasSuffix ".erl" file) (
+            map toString (lib.filesystem.listFilesRecursive directory)
+          )
+        )
+    );
+  testModules = modulesIn (project.src + "/test") ++ modulesIn (project.src + "/dev");
 in
 if
   builtins.any (name: name == "" || lib.hasInfix "/" name || name == "." || name == "..") (
@@ -97,7 +100,7 @@ else
       # No test module ships: the root compiled without its development code.
       for module in ${lib.escapeShellArgs testModules}; do
         if [ -e "$out/lib/${app}-${root.version}/ebin/$module.beam" ]; then
-          echo "gleam-nix: test module $module would ship." >&2
+          echo "gleam-nix: development module $module would ship." >&2
           exit 1
         fi
       done

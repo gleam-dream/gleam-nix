@@ -219,9 +219,11 @@ Dependency ordering does not affect the derivation path.
 Changing application code changes the application derivation while leaving its
 dependency derivations unchanged. Changing a dependency invalidates its consumers.
 A root given as a local path contributes only what its build reads:
-`gleam.toml`, `manifest.toml`, `src`, `priv` and `include`, and `test` with
-`includeDev`. A README or docs edit therefore leaves the root package cached,
-and a production root never compiles `test/`. Local path inputs exclude
+`gleam.toml`, `manifest.toml`, `src`, `priv` and `include`, and its development
+code, `test` and `dev`, with `includeDev`. Agent documents such as `AGENTS.md`
+and `CLAUDE.md` are left out wherever they sit. A README, docs or agent
+document edit therefore leaves the root package cached, and a production root
+never compiles `test/` or `dev/`. Local path inputs exclude
 `build`, `_build`, `node_modules`, and `.direnv` directories only at the source
 root. Nested source namespaces and resources
 with these names remain intact. Local inputs also use Nixpkgs' standard clean
@@ -296,10 +298,11 @@ The test layer supports Gleam 1.19.
   across checks, apps and repositories.
 - **Explicit inputs.** A check's source is an explicit fileset. By default it is
   what the build and tests read: the app's `gleam.toml`, `manifest.toml`,
-  `src`, `priv`, `include` and `test`, and the same without `test` for each
-  local path its manifest names, minus agent documents such as `AGENTS.md`
-  and `CLAUDE.md`. A README or docs edit is outside it. The adopter adds files
-  its tests read by name, through `extraInputs`. An edit outside a check's
+  `src`, `priv`, `include`, `test` and `dev`, and the same without `test` and
+  `dev` for each local path its manifest names, minus agent documents such as
+  `AGENTS.md` and `CLAUDE.md`. A README or docs edit is outside it. The adopter
+  adds files its tests read by name, through `extraInputs`, which drop agent
+  documents too. An edit outside a check's
   inputs leaves that check cached.
 - **Warnings are errors, in Gleam and Erlang alike.** Erlang sources compile
   with warnings as errors against the compiled dependencies. Gleam's package
@@ -443,7 +446,8 @@ workingDir ? "/home/<user>"; contents ? []; assets ? null; tag ? null; labels
   No application in the service's `.app` dependency closure needs a removed
   application, and no development module ships. Gleam's package compiler
   compiles Erlang files under `test/` even without development code, so a
-  production root's source leaves `test/` out ([D4](#d4-cache-identity)).
+  production root's source leaves `test/` and `dev/` out
+  ([D4](#d4-cache-identity)).
 - **`buildImage`.** The image carries a runtime contract: a non-root user, CA
   certificates, a shell and an HTTP client for the health check, and an
   entrypoint. Its closure, binaries included, holds no untrimmed Erlang.

@@ -170,7 +170,7 @@ let
             root = src;
             fileset = gleamSource {
               directory = src;
-              includeTest = includeDev;
+              inherit includeDev;
             };
           }
         else

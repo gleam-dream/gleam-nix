@@ -109,6 +109,7 @@ in
     test -e ${testedRelease}/lib/tested-0.1.0/ebin/tested.beam
     test ! -e ${testedRelease}/lib/tested-0.1.0/ebin/beta_test.beam
     test ! -e ${testedRelease}/lib/tested-0.1.0/ebin/tested@alpha_test.beam
+    test ! -e ${testedRelease}/lib/tested-0.1.0/ebin/tested_dev.beam
     touch "$out"
   '';
 

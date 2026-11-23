@@ -237,9 +237,11 @@ in
   since that module still runs whole in one shard. Read each module's time in
   a check's `report` before choosing a shard count.
 - **Inputs.** A check's source is what its build and tests read: `gleam.toml`,
-  `manifest.toml`, `src`, `priv`, `include` and `test`, and the same for its
-  local dependencies, without `AGENTS.md` or `CLAUDE.md`. A README or docs edit
-  reruns nothing. Add other files your tests read with `extraInputs`.
+  `manifest.toml`, `src`, `priv`, `include`, `test` and `dev`, and the same
+  without `test` and `dev` for its local dependencies. `AGENTS.md` and
+  `CLAUDE.md` are left out wherever they sit, so a README, docs or agent
+  document edit reruns nothing, and the release ignores them too. Add other
+  files your tests read with `extraInputs`.
 - **Services** start with a fresh port and state directory per check, so each
   shard has its own database. Two services, or a service and the check, that
   set the same variable fail evaluation. A failing check prints each service's

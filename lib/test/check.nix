@@ -31,19 +31,9 @@ let
       )
     );
 
-  # What a package's build and tests read, minus agent documents: the root
-  # with its tests, each local dependency without them.
-  checkInputs =
-    directory: includeTest:
-    lib.fileset.difference (gleamSource { inherit directory includeTest; }) (
-      lib.fileset.fileFilter (
-        file:
-        builtins.elem file.name [
-          "AGENTS.md"
-          "CLAUDE.md"
-        ]
-      ) directory
-    );
+  # What a package's build and tests read, without agent documents: the root
+  # with its development code, each local dependency without it.
+  checkInputs = directory: includeDev: gleamSource { inherit directory includeDev; };
 
   # Names the check itself sets; a service cannot claim them.
   checkOwned = [
@@ -85,7 +75,7 @@ let
           inputs
       )
     ]
-    ++ extraInputs
+    ++ map gleamSource.withoutAgentDocuments extraInputs
   );
   sourceAncestor = commonAncestor ([ project.src ] ++ localPaths ++ extraInputs);
   source = lib.fileset.toSource {
