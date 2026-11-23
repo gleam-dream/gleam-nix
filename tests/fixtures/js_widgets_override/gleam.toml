@@ -1,0 +1,3 @@
+name = "js_widgets"
+version = "0.1.0"
+target = "javascript"

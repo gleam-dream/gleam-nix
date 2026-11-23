@@ -5,6 +5,7 @@
   readManifest,
   buildGleamPackage,
   cleanSource,
+  gleamSource,
 }:
 {
   src,
@@ -40,6 +41,8 @@ let
       }
     else if package.source == "local" then
       src + "/${package.path}"
+    else if package.source == "git" then
+      throw "gleam-nix: Git package ${name} needs a source; pass sourceOverrides from gitSources."
     else
       throw "gleam-nix: source '${package.source}' for ${name} needs sourceOverrides.${name}.";
 
@@ -159,7 +162,19 @@ let
     {
       pname = config.name;
       version = config.version or "0.1.0";
-      inherit src includeDev;
+      inherit includeDev;
+      # Only what the build reads, so a README or docs edit rebuilds nothing.
+      src =
+        if builtins.isPath src then
+          lib.fileset.toSource {
+            root = src;
+            fileset = gleamSource {
+              directory = src;
+              inherit includeDev;
+            };
+          }
+        else
+          src;
       beamDeps = map (name: packages.${name}) rootNames;
     }
     // packageArgs
@@ -180,6 +195,6 @@ else if reservedArgs != [ ] then
 else
   builtins.seq locked {
     manifest = locked;
-    inherit packages sources;
+    inherit packages sources src;
     package = root;
   }

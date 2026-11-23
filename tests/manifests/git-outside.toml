@@ -1,0 +1,5 @@
+# Git entries whose paths leave their repository.
+packages = [
+  { name = "climbs", version = "0.1.0", build_tools = ["gleam"], requirements = [], source = "git", repo = "https://github.com/gleam-dream/gleam-nix.git", commit = "d43c445b983ab4f67860560ca88d0ff8439ffed3", path = "../elsewhere" },
+  { name = "absolute", version = "0.1.0", build_tools = ["gleam"], requirements = [], source = "git", repo = "https://github.com/gleam-dream/gleam-nix.git", commit = "d43c445b983ab4f67860560ca88d0ff8439ffed3", path = "/etc" },
+]

@@ -16,6 +16,13 @@ let
     };
   };
   changed = gleam.importProject { src = ./fixtures/app_a_changed; };
+  gitConsumer = gleam.importProject {
+    src = ./fixtures/git_consumer;
+    sourceOverrides = gleam.gitSources {
+      manifest = ./fixtures/git_consumer/manifest.toml;
+      registry = import ./fixtures/git_consumer/git-hashes.nix;
+    };
+  };
   dev = gleam.importProject {
     src = ./fixtures/app_a;
     includeDev = true;
@@ -47,7 +54,12 @@ let
     fileset = pkgs.lib.fileset.fileFilter (file: file.hasExt "nix") ../.;
   };
 in
-{
+pkgs.lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux (
+  import ./test-layer.nix { inherit pkgs gleam; }
+  // import ./release-layer.nix { inherit pkgs gleam; }
+  // import ./javascript-layer.nix { inherit pkgs gleam; }
+)
+// {
   formatting =
     pkgs.runCommand "gleam-nix-formatting"
       {
@@ -93,6 +105,17 @@ in
         ERL_LIBS=${pkgs.lib.escapeShellArg (paths [ sourceChanged.package ])} erl -noshell -eval '
           5 = app_a:answer(), halt(0).'
         test -f ${a.package}/src/src/app_a.gleam
+        touch "$out"
+      '';
+
+  git-sources =
+    pkgs.runCommand "gleam-nix-git-sources"
+      {
+        nativeBuildInputs = [ gleam.erlang ];
+        buildInputs = [ gitConsumer.package ];
+      }
+      ''
+        erl -noshell -eval '4 = git_consumer:answer(), halt(0).'
         touch "$out"
       '';
 

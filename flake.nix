@@ -18,6 +18,12 @@
         inherit nixpkgs;
         gleam-nix.lib.mkLib = mkLib;
       };
+      # The README's whole service setup, built by the checks.
+      service = (import ./examples/service/flake.nix).outputs {
+        self = service;
+        inherit nixpkgs;
+        gleam-nix.lib.mkLib = mkLib;
+      };
     in
     {
       lib = { inherit mkLib; };
@@ -30,6 +36,17 @@
           inherit pkgs;
           gleam = mkLib pkgs;
           exampleShell = quickstart.devShells.${system}.default;
+        }
+        // nixpkgs.lib.optionalAttrs (system == "x86_64-linux") {
+          # The README's service: its shards against PostgreSQL, coverage and
+          # image all build.
+          service-example = pkgs.writeText "gleam-nix-service-example" (
+            builtins.concatStringsSep "\n" (
+              map (result: result.outPath) (
+                builtins.attrValues service.checks.${system} ++ [ service.packages.${system}.image ]
+              )
+            )
+          );
         }
       );
       packages = forSystems (

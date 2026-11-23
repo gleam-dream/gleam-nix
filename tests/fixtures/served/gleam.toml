@@ -1,0 +1,11 @@
+name = "served"
+version = "0.1.0"
+target = "erlang"
+
+[dependencies]
+
+[dev-dependencies]
+gleeunit = ">= 1.0.0 and < 2.0.0"
+
+[erlang]
+extra_applications = ["inets"]

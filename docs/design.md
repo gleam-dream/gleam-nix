@@ -4,20 +4,94 @@ Gleam Nix builds each Gleam package as an independent Nix derivation. It reads t
 resolved dependency graph from Gleam's manifest and preserves compiled package
 outputs across consumers with identical inputs.
 
+On that package graph it composes a test layer, a release and image layer, and
+a JavaScript entry point. Each is a separate module: a plain value or function
+that returns derivations, whose defaults the caller can replace. The library is
+a library: it gives an adopter the derivations, and the adopter's CI decides how
+to build and cache them.
+
 ## Scope and terms
 
 A **locked package** is a package entry in `manifest.toml`. A **package output**
 contains one compiled OTP application and Gleam's compiler metadata. A
 **project** combines a root Gleam package with its locked packages.
 
-The initial compiler target is Erlang. The library does not resolve dependency
-versions, update manifests, replace Gleam's development workflow, or implement
-Rebar3, Mix, npm, release assembly, or cross compilation. It can delegate
-locked Rebar3 and Mix packages to Nixpkgs' builders on request.
+A **check** is one derivation an adopter builds, usually as a flake check: one
+app or package tested, one shard of one, or another check the adopter declares. A **runner** decides how a
+check executes compiled tests. A **service** is a process a check needs while
+its tests run, such as a database. A **derived check** is built from other
+checks' outputs, such as coverage. The **adopter** is the repository that uses
+the library.
+
+### Goals
+
+The library serves Gleam repositories on Nix that want fast, trustworthy CI and
+a shipped artifact they can trust:
+
+- **Only the checks whose inputs changed rebuild.** A check is one app or
+  package, or one shard of one, and its derivation depends only on its inputs.
+  With a binary cache, a run where no test input changed rebuilds nothing.
+- **What ships is what was tested.** The image is built from the dependency
+  outputs and compiler the tests used ([D10](#d10-release-and-image)).
+- **Adoption is small.** An adopter writes a short flake of its checks and
+  image. Every default sits behind a value the adopter can replace.
+
+Two shapes exercise the interfaces together, so neither freezes them alone: a
+single-service repository with a sharded PostgreSQL suite, and
+[oversight](https://github.com/gleam-dream/oversight), a multi-app repository
+whose apps share PostgreSQL and Git dependencies.
+
+### No-goals
+
+The library does not:
+
+- resolve dependency versions, update manifests, or replace Gleam's development
+  workflow;
+- implement Rebar3, Mix or npm, which it delegates to Nixpkgs' builders;
+- support languages other than Gleam, targets other than Erlang and JavaScript,
+  or cross compilation;
+- deploy. Deploys stay in each adopter;
+- orchestrate CI: plan jobs, choose or configure a binary cache, push results,
+  or ship workflows. Adopters compose existing tools for that, such as
+  nix-fast-build, nix-eval-jobs, Cachix, Attic or Magic Nix Cache;
+- balance shards by run time;
+- use content-addressed derivations;
+- run checks or build images on Darwin. Version 1 is Linux only; a Darwin user
+  evaluates and develops locally;
+- own an adopter's non-Gleam checks, such as scripts in other languages,
+  documentation snippets or experiment playgrounds. They stay checks the
+  adopter declares, or jobs of its own.
+
+### Ownership
 
 Nix owns immutable output storage, build scheduling, and binary-cache access.
 The caller owns the Nixpkgs revision and toolchain selection. Gleam owns source
-compilation and the compiler metadata format.
+compilation and the compiler metadata format. The adopter owns which checks
+exist, its CI, its binary cache and credentials, and its deploys.
+
+### Stability
+
+The package layer ([D1](#d1-locked-graph) to [D6](#d6-composition)) and the
+test layer are stable. The release and image layer and the JavaScript entry
+point are **unstable**: they have one user, so they may change without a major
+version until a second user adopts them.
+
+### Composition
+
+```mermaid
+flowchart LR
+  manifest[manifest.toml] --> import[importProject]
+  registry[hash registry] --> git[gitSources] --> import
+  import -- dependency outputs --> test[mkTestCheck]
+  runner[runner] --> test
+  services[services] --> test
+  import -- dependency outputs --> release[buildRelease]
+  trim[trimErlang] -- runtime --> release
+  release --> image[buildImage]
+  js[buildJavascriptPackage] -- assets --> image
+  test --> checks[adopter's flake checks]
+  image --> packages[adopter's flake packages]
+```
 
 ## Public interfaces
 
@@ -33,7 +107,8 @@ selects a consistent Erlang/Elixir package set.
 - `importProject { src; manifest ? src + "/manifest.toml"; sourceOverrides ? {};
 packageOverrides ? final: prev: {}; buildForeign ? false; foreignArgs ? {};
 includeDev ? false; packageArgs ? {}; }`
-  returns `package`, `packages`, `sources`, and the parsed `manifest`.
+  returns `package`, `packages`, `sources`, the root `src`, and the parsed
+  `manifest`.
   The root source and manifest must be readable during evaluation.
   With `buildForeign`, a locked package that does not use Gleam builds with
   Nixpkgs' `buildRebar3` (preferred when offered) or `buildMix`, using its
@@ -48,6 +123,14 @@ includeDev ? false; packageArgs ? {}; }`
 - `fromBeamPackage { package; pname; version; otpAppName ? pname;
 beamDeps ? package.beamDeps or []; appDir ? ...; }` attaches package metadata
   to an already compiled BEAM derivation. It does not rebuild that package.
+- `gitSources { manifest; registry; }` turns the manifest's Git entries and a
+  hash registry into `sourceOverrides` ([D2](#d2-sources)).
+
+The test, release and JavaScript modules extend the same scope. Their
+interfaces live with their behavior: [test checks](#d7-test-checks),
+[runners](#d8-runners), [services](#d9-services),
+[release and image](#d10-release-and-image), and
+[JavaScript packages](#d11-javascript-packages).
 
 A package output follows Nixpkgs' layout:
 `lib/erlang/lib/<otp-application>-<version>/`. It retains `ebin`,
@@ -88,6 +171,14 @@ Fetching creates Nix fetcher derivations. The library never reads their output
 to discover metadata during evaluation, so Hex builds do not require import
 from derivation. The locked record supplies the package name and version.
 
+`gitSources` is the supported way to supply Git sources. The adopter keeps a
+registry of content hashes keyed by repository URL and locked commit, as pure
+data. The helper takes the host, owner and repository from the manifest's URL,
+supports packages in subdirectories, and fails evaluation naming any Git entry
+the registry lacks. It produces ordinary `sourceOverrides`, so the rule above
+still holds: nothing fetched is read during evaluation, and evaluation needs no
+Git credentials.
+
 ### D3: Package compilation
 
 A Gleam package compiles with `gleam compile-package`, the selected Erlang
@@ -127,8 +218,14 @@ Equivalent dependencies across projects have equal derivation paths.
 Dependency ordering does not affect the derivation path.
 Changing application code changes the application derivation while leaving its
 dependency derivations unchanged. Changing a dependency invalidates its consumers.
-Local path inputs exclude `build`, `_build`, `node_modules`, and `.direnv`
-directories only at the source root. Nested source namespaces and resources
+A root given as a local path contributes only what its build reads:
+`gleam.toml`, `manifest.toml`, `src`, `priv` and `include`, and its development
+code, `test` and `dev`, with `includeDev`. Agent documents such as `AGENTS.md`
+and `CLAUDE.md` are left out wherever they sit. A README, docs or agent
+document edit therefore leaves the root package cached, and a production root
+never compiles `test/` or `dev/`. Local path inputs exclude
+`build`, `_build`, `node_modules`, and `.direnv` directories only at the source
+root. Nested source namespaces and resources
 with these names remain intact. Local inputs also use Nixpkgs' standard clean
 source filter.
 Prepared source objects and store-context strings are kept opaque during evaluation.
@@ -168,9 +265,243 @@ an output was built and does not inspect or prove its bytecode provenance.
 The compiler receives explicit mappings when package and OTP application names
 differ.
 
-JavaScript assets belong to a separate npm/pnpm/Yarn derivation. Final
-application assembly can consume those assets alongside the compiled BEAM
-package. A Gleam JavaScript compiler backend is outside this initial scope.
+The package output stays a compiled library. Assembly beyond it is a separate
+layer over the same outputs: a test check ([D7](#d7-test-checks)) and a release
+([D10](#d10-release-and-image)) consume the project's dependency outputs as they
+are, and neither rebuilds a dependency. An adopter can still assemble its own
+launcher or OTP/Mix release from the package output instead.
+
+JavaScript dependencies from npm, pnpm or Yarn belong to a separate derivation.
+A Gleam frontend compiles through its own entry point,
+`buildJavascriptPackage` ([D11](#d11-javascript-packages)), and `importProject`
+keeps accepting only the Erlang target. The image consumes the frontend's
+output as assets beside the compiled BEAM package.
+
+### D7: Test checks
+
+**Interface.** `mkTestCheck { project; inputs ? <default fileset>; extraInputs ?
+[]; runner ? testRunners.default; services ? []; vmFlags ? []; env ? {}; }`
+returns one check. `project` is an `importProject` result with `includeDev =
+true`; any other fails evaluation. The check compiles the root with its
+development code against the project's cached dependency outputs, gates
+warnings, then hands the compiled tree to its runner. Its output holds `report`,
+one line per test module: the module, `passed` or `failed`, its test count and
+its milliseconds. `extraInputs` adds paths outside the default fileset.
+`mkCoverageCheck { checks; name ? "coverage"; }` is the derived coverage check.
+The test layer supports Gleam 1.19.
+
+**Invariants.**
+
+- **One compile model.** Tests compile per package through this library, never
+  in one `gleam build`. A test check's dependencies are the same derivations as
+  the project's production dependencies, so they are built once and shared
+  across checks, apps and repositories.
+- **Explicit inputs.** A check's source is an explicit fileset. By default it is
+  what the build and tests read: the app's `gleam.toml`, `manifest.toml`,
+  `src`, `priv`, `include`, `test` and `dev`, and the same without `test` and
+  `dev` for each local path its manifest names, minus agent documents such as
+  `AGENTS.md` and `CLAUDE.md`. A README or docs edit is outside it. The adopter
+  adds files its tests read by name, through `extraInputs`, which drop agent
+  documents too. An edit outside a check's
+  inputs leaves that check cached.
+- **Warnings are errors, in Gleam and Erlang alike.** Erlang sources compile
+  with warnings as errors against the compiled dependencies. Gleam's package
+  compiler has no such flag, so the Gleam half reads the compiler's output for
+  the root package only, never for dependencies. That reading is a brittle
+  surface, pinned by a fixture test, and Gleam is asked upstream for a flag.
+- **Coverage is apart from execution.** The expected set of test modules comes
+  from source discovery, never from what a runner reports. A coverage check
+  derived from a project's checks compares the two and names each module that
+  ran nowhere or ran twice. The expected set is the compile's separate
+  `modules` output, so coverage needs only it and the checks' reports, never
+  the compile and its closure.
+- **Sandbox.** Every BEAM VM a check starts loads a CA bundle. A failing run
+  leaves no output in the store; its log goes to the build log.
+- **Supported compilers.** The test layer declares the Gleam versions it
+  supports. Evaluation fails outside that range, so an untested compiler never
+  runs a reproduction of its generated code.
+
+**Verification.** Fixture projects in the library's checks show that an edit to
+a test module rebuilds only the root check, that a Gleam or an Erlang warning in
+the root fails the check while one in a dependency does not, and that coverage
+names a missing and a duplicated module. A fixture pins the compiler output the
+warnings gate reads, so a Gleam release that changes it breaks this library's
+checks, not an adopter's.
+
+### D8: Runners
+
+**Interface.** A runner is a value `{ name; run; }` a check takes. `run`
+receives the root's OTP application and test module and returns the shell that
+runs the tests from a copy of the root's source. Each test module it runs
+reaches the report through an eunit listener the check installs. Two runners
+ship.
+
+- The **default runner**, `testRunners.default`, runs the package's own test
+  `main`, exactly as `gleam test` does.
+- The **shard runner**, `testRunners.shard { index; count; setup ? null; pins ?
+{}; }`, runs one shard's modules. `setup` names a Gleam function as
+  `module.function`; `pins` maps a test module to a shard. Both name modules
+  by their Gleam path, such as `my_app/users_test`. A pin that names no test
+  module fails the shard, so a typo never moves a module silently. `testRunners.shards {
+count; setup; pins; }` lists every shard's runner.
+
+**Invariants.**
+
+- **Same entry contract as Gleam.** Both runners reproduce the `<app>@@main`
+  module Gleam generates: binary UTF-8 on standard I/O, trapped exits, the
+  application started, panics printed with their stack traces, and the exit
+  status set. The layout of that module is a brittle surface with a fixture.
+- **Local and CI agree.** The default runner calls `<package>_test.main()` from
+  a copy of the root's source, because gleeunit discovers `test/` relative to
+  the working directory. Setup an adopter does in its test `main` therefore
+  runs in CI too. An eunit listener reports each module and its time, which
+  gleeunit's own output does not name. The check attaches it through eunit's
+  `EUNIT` environment variable, which eunit appends to every run's options and
+  whose listeners it awaits before returning, so gleeunit runs unchanged.
+- **Panics.** gleeunit reports a panicking test with its location and fails the
+  run. A panic outside a test, in a test `main` or a `setup` hook, prints
+  Gleam's runtime error with its stack trace.
+- **Sharding is a second runner, not a mode.** The shard runner runs a shard's
+  modules through eunit with gleeunit's options, which it copies; those options
+  are a brittle surface with a fixture, and gleeunit is asked upstream for an
+  entry point that takes a module list. Setup moves into the `setup` hook.
+- **Stable membership.** A module's shard follows from a hash of its name,
+  unless the adopter pins it. Adding a module moves no other module. All shards
+  of one check share one compile derivation.
+- **Declared contract.** A runner reads its shard and writes its module report
+  as declared files, never by scraping a test log.
+
+**Verification.** One fixture whose test `main` does setup runs under both
+runners, with the shard runner's `setup` hook doing the same work, and both
+report the same modules with the same verdicts. A fixture with a panicking
+test shows its location and a failing exit status under each runner, and a
+panic in its test `main` and in a `setup` hook shows the stack trace.
+
+### D9: Services
+
+**Interface.** A service is a value `{ name; nativeBuildInputs; start; stop;
+log; env; }`. The check runs `start` and `stop` with `$SERVICE_STATE` and
+`$SERVICE_PORT` set, and expands each `env` value as a shell word after start.
+A check takes a list of services. PostgreSQL ships first:
+`testServices.postgresql { package ? postgresql; name ? "postgresql"; init ?
+""; env ? <PGHOST, PGPORT, PGUSER>; aliases ? {}; }`, where `init` is SQL the
+superuser runs (for example roles and databases) and `aliases` adds names such
+as a connection URL. It runs `initdb` and `pg_ctl` itself, the commands
+Nixpkgs' `postgresqlTestHook` runs, because the hook fixes one port and data
+directory per derivation.
+
+**Invariants.**
+
+- **Isolated.** Each service gets its own state directory and a fresh port per
+  run of a check, so every shard has its own services.
+- **Composable.** Services' environments merge into the check's. A clash
+  between variable names, among services or with the check's own environment,
+  fails evaluation. The check runs on names, because values such as ports exist
+  only at run time.
+- **Adopter-shaped.** Aliases let one service serve different conventions,
+  such as a single connection URL in one repository and a named role with its
+  own databases in another.
+- **Diagnosable.** When a check fails, each service's log is printed to the
+  build log before the service stops.
+
+**Verification.** The library's checks start PostgreSQL at two major versions,
+one with an init hook creating a non-superuser role and its databases, one
+exporting a connection URL through an alias. A fixture with two services
+declaring the same variable fails evaluation naming both. A failing test shows
+the service log in the build log.
+
+### D10: Release and image
+
+This layer is unstable ([Stability](#stability)). It is extracted from an
+existing image build of one adopter.
+
+**Tested equals shipped.** The image holds the tests' dependency outputs and
+compiler. The root is compiled twice from the same source: once with
+development code for tests, once without for the release. The runtime is a
+checked derivative of the Erlang the tests ran on.
+
+**Interface.**
+
+- `trimErlang { without; }` copies the scope's cached Erlang and removes the
+  listed OTP applications. It keeps the original as `original`.
+- `buildRelease { project; runtime; priv ? {}; }` assembles a release from the
+  project's dependency outputs and a production compile of the root, on the
+  given runtime. `project` is imported without `includeDev`, and `runtime` is
+  the project's Erlang or a trim of it. `priv` maps a name to files the root
+  application finds under its `priv` directory, such as `{ web = frontend; }`
+  for `priv/web`. `bin/<package>` starts the root through Gleam's own entry
+  module, as `gleam run` does.
+- `buildImage { release; name; port; health; user; uid ? 1000; gid ? uid;
+workingDir ? "/home/<user>"; contents ? []; assets ? null; tag ? null; labels
+? {}; env ? {}; }` builds an OCI image with Nixpkgs' `dockerTools`. It runs as
+  `uid:gid`, which must not be root, from `workingDir`. `contents` adds
+  packages, such as tools for an operator's shell. `PORT` and `SSL_CERT_FILE`
+  are set, and `assets` is named by `ASSETS_DIR`.
+
+**Invariants.** Each assertion lives in the step that can break it.
+
+- **`trimErlang`.** The image's Erlang is trimmed by copying, never rebuilt.
+  Binaries embed their store paths, so the copy keeps a store name of the same
+  length as the original, or it shows that no binary embeds the original.
+- **`buildRelease`.** The production compile passes the same warnings gate as
+  the tests. References to the original Erlang are rewritten to the runtime.
+  No application in the service's `.app` dependency closure needs a removed
+  application, and no development module ships. Gleam's package compiler
+  compiles Erlang files under `test/` even without development code, so a
+  production root's source leaves `test/` and `dev/` out
+  ([D4](#d4-cache-identity)).
+- **`buildImage`.** The image carries a runtime contract: a non-root user, CA
+  certificates, a shell and an HTTP client for the health check, and an
+  entrypoint. Its closure, binaries included, holds no untrimmed Erlang.
+
+**Verification.** A fixture release that depends on a removed application
+fails `buildRelease`. The image check scans the closure, binaries included, for
+the original Erlang path, and an image given the original Erlang fails it. A
+boot-and-health check reads the image's configuration, starts its entrypoint
+with its environment, and runs its own health check until it passes. The
+sandbox has no container runtime, so the check runs the image's processes
+without its filesystem.
+
+### D11: JavaScript packages
+
+This entry point is unstable ([Stability](#stability)).
+
+**Interface.** `buildJavascriptPackage { src; manifest ? src +
+"/manifest.toml"; sourceOverrides ? {}; nodeModules ? null; doCheck ? true;
+warningsAsErrors ? true; ... }` builds a Gleam project for the JavaScript target and runs its tests with
+Node. Its npm dependencies come from a separate npm derivation
+([D6](#d6-composition)), whose `node_modules` it links as `nodeModules`. Its
+output is Gleam's JavaScript build tree without any package outside the runtime
+dependency closure and without any trace of the tests: their modules, their
+compiler metadata, or the entry modules `gleam test` generates, and it can be an image's `assets`. Local
+path dependencies build in place: the build records each one's `gleam.toml`
+fingerprint where Gleam looks for it, so Gleam does not resolve versions again
+offline. Git sources come through `sourceOverrides`, with their locked commits
+recorded as Gleam records them. The build uses the `manifest` argument, not a
+manifest `src` may carry, fails on warnings unless `warningsAsErrors = false`,
+and resolves links such as packages' `priv` directories in its output. Ordinary derivation attributes and
+hooks pass through.
+
+A frontend given as a local path contributes only what its build and tests
+read, as an Erlang root does ([D4](#d4-cache-identity)): `gleam.toml`,
+`manifest.toml`, `src`, `priv`, `include`, `test` and `dev`, and the same for
+each local package inside it, without agent documents. A README edit leaves
+the frontend cached.
+
+Hex sources are fetched as `importProject` fetches them, as separate
+derivations, and laid out where Gleam looks for downloaded packages, so one
+`gleam build` and `gleam test` per frontend run offline. Unlike the Erlang
+graph, the frontend's Gleam dependencies compile inside that one derivation; a
+frontend is one check, and per-package outputs wait for a second user.
+
+**Invariants.** It is a separate entry point: `importProject` keeps its
+Erlang-only guard, and nothing in the Erlang graph depends on the frontend. A
+frontend edit rebuilds the frontend and the image, never the backend, as long
+as the frontend's files sit outside the backend's own inputs, such as its
+`src` or `priv` ([D4](#d4-cache-identity)).
+
+**Verification.** A fixture frontend builds and its tests pass under Node, and
+an image built with it as `assets` serves them.
 
 ## Implementation boundaries
 
@@ -180,6 +511,16 @@ the BEAM output contract. `lib/clean-source.nix` owns local source filtering for
 Gleam and delegated foreign builds. `lib/beam.nix` owns dependency closure and
 compatibility checks. `lib/default.nix` binds these functions to the caller's
 package set.
+
+`lib/git-sources.nix` owns Git sources. `lib/warnings-gate.nix` owns the
+warnings gate that the test check and the release share, and
+`lib/gleam-main.erl` the entry module both start through. `lib/test/` owns test
+checks, runners, services and coverage, with the Erlang modules its runners
+load. `lib/release/` owns the trimmed runtime, the release and the image.
+`lib/javascript.nix` owns the JavaScript entry point.
+Each new module owns one concern and depends only on the package layer's
+public interface: Git sources, test checks with their runners, services, the
+release and image, and the JavaScript entry point.
 
 ## Research and decisions
 
@@ -202,3 +543,56 @@ output without coupling npm inputs to every Gleam dependency.
 [Gleam's compilation API](https://gleam.run/documentation/command-line-reference/#compile-package)
 accepts already compiled dependencies from the same compiler version. This
 provides the package boundary without a compiler fork.
+
+The test and image layers generalise two existing setups. A single-service
+repository with a sharded PostgreSQL suite cut its required check from many
+minutes to about a minute and a half when no test input changed, with cached Nix test derivations, sharding, and plan, build and verify
+jobs, but it compiled in one `gleam build`, found shards by reading test logs,
+called gleeunit's private functions, and repeated one cache vendor's steps in
+every job. A multi-app repository ran every app's tests on every push, in the
+development shell, with nothing cached. The modules keep the first setup's
+reuse and the second's per-app independence, without either's hand-written
+Nix plumbing. The first setup's job orchestration stays with each adopter.
+
+[nix-github-actions](https://github.com/nix-community/nix-github-actions)
+turns flake checks into a job matrix, and
+[nix-fast-build](https://github.com/Mic92/nix-fast-build) and
+[omnix](https://omnix.page/om/ci.html) skip what is already cached.
+[nix-eval-jobs](https://github.com/nix-community/nix-eval-jobs) reports cache
+status per job. Because each check is an ordinary derivation, an adopter
+composes these tools and a binary cache of its choice over the library's
+checks; the library does not wrap them.
+
+### Rejected alternatives
+
+- **One `gleam build` per check.** Dependencies would recompile in every check,
+  nothing would be shared across apps or repositories, and it depends on
+  Gleam's internal build files.
+- **Shipping the exact tested compile.** It would carry test and development
+  modules and need a strip step with its own proof. The root is compiled twice
+  instead, under the same warnings gate.
+- **One eunit runner with a setup hook for every adopter.** Setup in a test
+  `main` would move into Nix, and local `gleam test` and CI would run different
+  entry points. The default runner runs the package's own `main`.
+- **Reading Git sources with an evaluation-time fetch.** It breaks D2's rule,
+  puts a fetch in every evaluation, and needs Git credentials there.
+- **A new repository for the test or image layers.** One home, with separate
+  modules, keeps the interfaces in step with the package layer.
+- **A CI layer in the library: plan, build and verify commands, cache
+  adapters and a reusable workflow.** It would make the library own job
+  scheduling, cache choice and a write-trust model, tie it to CI vendors and cache services, and duplicate
+  what nix-fast-build, nix-eval-jobs and the cache tools already do. The
+  library stays a set of composable derivations.
+- **Deferring the image and JavaScript layers to a second user.** The image is
+  the point for a service, and an image build already exists to extract. The
+  risk of freezing around one user is accepted and marked unstable.
+- **Running a check's tests concurrently in one VM against separate
+  databases.** Test harnesses assume one database per VM; shards get their own
+  VM and services instead.
+
+### Rulings
+
+- **Hash sharding is kept until measured.** Each check's `report` records time
+  per module; the first adoption's reports decide. If shards are uneven, the
+  fallback is the shard count or pinning a module, not balancing by run time,
+  which stays a no-goal. Ruled by the owner.

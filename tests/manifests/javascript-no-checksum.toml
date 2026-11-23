@@ -1,0 +1,4 @@
+# A Hex package without its checksum.
+packages = [
+  { name = "gleam_stdlib", version = "1.2.0", build_tools = ["gleam"], requirements = [], otp_app = "gleam_stdlib", source = "hex" },
+]

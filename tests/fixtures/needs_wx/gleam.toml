@@ -1,0 +1,6 @@
+name = "needs_wx"
+version = "0.1.0"
+target = "erlang"
+
+[erlang]
+extra_applications = ["wx"]
