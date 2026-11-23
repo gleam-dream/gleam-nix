@@ -1,0 +1,7 @@
+# Git entries under several URL forms, read by gitSources alone.
+packages = [
+  { name = "over_ssh", version = "0.1.0", build_tools = ["gleam"], requirements = [], source = "git", repo = "git@github.com:gleam-dream/gleam-nix.git", commit = "d43c445b983ab4f67860560ca88d0ff8439ffed3" },
+  { name = "bare_https", version = "0.1.0", build_tools = ["gleam"], requirements = [], source = "git", repo = "https://github.com/gleam-dream/gleam-nix", commit = "d43c445b983ab4f67860560ca88d0ff8439ffed3" },
+  { name = "elsewhere", version = "0.1.0", build_tools = ["gleam"], requirements = [], source = "git", repo = "https://codeberg.org/example/library.git", commit = "0123456789012345678901234567890123456789", path = "packages/library" },
+  { name = "from_hex", version = "1.0.0", build_tools = ["gleam"], requirements = [], source = "hex", outer_checksum = "00" },
+]

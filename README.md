@@ -41,8 +41,8 @@ Darwin.
 ## Capabilities
 
 - Build locked Hex and local Gleam packages independently.
-- Supply Git sources through explicit overrides and build Rebar3 and Mix
-  packages with Nixpkgs on request.
+- Fetch locked Git sources from the manifest with a registry of content hashes,
+  and build Rebar3 and Mix packages with Nixpkgs on request.
 - Compose Rebar3 and Mix outputs through the same BEAM dependency graph.
 - Keep application source and unrelated manifest entries outside dependency inputs.
 
@@ -90,6 +90,36 @@ Replace `my_app` with your module name (`hello` in the example). The output is a
 compiled OTP library with Gleam compiler metadata. Applications assemble their
 own executable launchers or OTP/Mix releases.
 
+## Git dependencies
+
+The manifest locks each Git dependency's repository, commit and, for a package
+in a subdirectory, its path. Keep a registry of content hashes beside it, keyed
+by repository URL and commit, and hand both to `gitSources`:
+
+```nix
+gleam.importProject {
+  src = ./.;
+  sourceOverrides = gleam.gitSources {
+    manifest = ./manifest.toml;
+    registry = import ./git-hashes.nix;
+  };
+}
+```
+
+```nix
+# git-hashes.nix
+{
+  "https://github.com/owner/library.git" = {
+    "<locked commit>" = "sha256-...";
+  };
+}
+```
+
+GitHub repositories use `fetchFromGitHub`; other hosts use `fetchgit`.
+Evaluation fetches nothing and needs no Git credentials. A Git entry missing
+from the registry fails evaluation with its name, repository and commit. Get a
+GitHub hash with `nix flake prefetch github:owner/library/<commit>`.
+
 ## How caching works
 
 Each Gleam package compiles against its resolved dependencies with
@@ -131,7 +161,8 @@ backend on asset edits. Compiled Gleam dependencies remain independent either wa
 ## Operational limits
 
 - The root configuration and manifest must be readable during evaluation. Git
-  dependencies require `sourceOverrides`.
+  dependencies need a registry entry for `gitSources`, or an explicit
+  `sourceOverrides` entry. Private repositories need a fetcher of the adopter's.
 - Locked Rebar3 and Mix packages can use `buildForeign = true`, with builder
   options in `foreignArgs.<name>`. Other foreign build tools need `packageOverrides`.
 - Non-Gleam packages drop all requirements absent from the manifest, for any

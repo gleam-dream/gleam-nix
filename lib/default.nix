@@ -9,5 +9,6 @@ pkgs.lib.makeScope pkgs.newScope (self: {
   readManifest = self.callPackage ./manifest.nix { };
   buildGleamPackage = self.callPackage ./build-package.nix { };
   importProject = self.callPackage ./import-project.nix { };
+  gitSources = self.callPackage ./git-sources.nix { };
   fromBeamPackage = self.beam.fromBeamPackage;
 })

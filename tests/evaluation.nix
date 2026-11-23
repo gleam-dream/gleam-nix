@@ -143,8 +143,75 @@ let
       elixir_math = "${pkgs.runCommand "mix-source-must-not-build-at-evaluation" { } "exit 99"}/nested";
     };
   };
+  gitHashes = import ./fixtures/git_consumer/git-hashes.nix;
+  gitConsumer =
+    registry:
+    gleam.importProject {
+      src = ./fixtures/git_consumer;
+      sourceOverrides = gleam.gitSources {
+        manifest = ./fixtures/git_consumer/manifest.toml;
+        inherit registry;
+      };
+    };
+  rejectsGit = registry: !(builtins.tryEval (gitConsumer registry).package.drvPath).success;
+  commit = "d43c445b983ab4f67860560ca88d0ff8439ffed3";
+  hostSources = gleam.gitSources {
+    manifest = ./manifests/git-hosts.toml;
+    registry = {
+      "git@github.com:gleam-dream/gleam-nix.git".${commit} =
+        gitHashes."https://github.com/gleam-dream/gleam-nix.git".${commit};
+      "https://github.com/gleam-dream/gleam-nix".${commit} =
+        gitHashes."https://github.com/gleam-dream/gleam-nix.git".${commit};
+      "https://codeberg.org/example/library.git"."0123456789012345678901234567890123456789" =
+        lib.fakeHash;
+    };
+  };
+  plain = source: builtins.unsafeDiscardStringContext (toString source);
 in
 lib.runTests {
+  testGitSourcesAvoidEvaluationFetch = {
+    expr = (builtins.tryEval (gitConsumer gitHashes).package.drvPath).success;
+    expected = true;
+  };
+  testGitSourcesSelectSubdirectory = {
+    expr = lib.hasSuffix "-source/tests/fixtures/shared_lib" (
+      plain (gitConsumer gitHashes).sources.shared_lib
+    );
+    expected = true;
+  };
+  testGitSourcesRejectMissingRepository = {
+    expr = rejectsGit { };
+    expected = true;
+  };
+  testGitSourcesRejectMissingCommit = {
+    expr = rejectsGit {
+      "https://github.com/gleam-dream/gleam-nix.git"."0000000000000000000000000000000000000000" =
+        lib.fakeHash;
+    };
+    expected = true;
+  };
+  testGitSourcesCoverOnlyGitEntries = {
+    expr = lib.attrNames hostSources;
+    expected = [
+      "bare_https"
+      "elsewhere"
+      "over_ssh"
+    ];
+  };
+  # One GitHub repository is the same source under each URL form.
+  testGitSourcesNormalizeGitHubUrls = {
+    expr = plain hostSources.over_ssh == plain hostSources.bare_https;
+    expected = true;
+  };
+  testGitSourcesFetchOtherHostsWithGit = {
+    expr =
+      let
+        source = plain hostSources.elsewhere;
+      in
+      lib.hasSuffix "/packages/library" source && source != plain hostSources.bare_https;
+    expected = true;
+  };
+
   testForeignPackageDropsRequirementsGleamNeverLocked = {
     expr = (builtins.head (gleam.readManifest ./manifests/optional.toml).packages).requirements;
     expected = [

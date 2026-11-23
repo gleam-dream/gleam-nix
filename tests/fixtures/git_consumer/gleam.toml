@@ -1,0 +1,6 @@
+name = "git_consumer"
+version = "0.1.0"
+target = "erlang"
+
+[dependencies]
+shared_lib = { git = "https://github.com/gleam-dream/gleam-nix.git", ref = "d43c445b983ab4f67860560ca88d0ff8439ffed3" }

@@ -40,6 +40,8 @@ let
       }
     else if package.source == "local" then
       src + "/${package.path}"
+    else if package.source == "git" then
+      throw "gleam-nix: Git package ${name} needs a source; pass sourceOverrides from gitSources."
     else
       throw "gleam-nix: source '${package.source}' for ${name} needs sourceOverrides.${name}.";
 
