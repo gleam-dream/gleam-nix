@@ -312,7 +312,9 @@ The test layer supports Gleam 1.19.
 - **Coverage is apart from execution.** The expected set of test modules comes
   from source discovery, never from what a runner reports. A coverage check
   derived from a project's checks compares the two and names each module that
-  ran nowhere or ran twice.
+  ran nowhere or ran twice. The expected set is the compile's separate
+  `modules` output, so coverage needs only it and the checks' reports, never
+  the compile and its closure.
 - **Sandbox.** Every BEAM VM a check starts loads a CA bundle. A failing run
   leaves no output in the store; its log goes to the build log.
 - **Supported compilers.** The test layer declares the Gleam versions it
@@ -469,8 +471,9 @@ This entry point is unstable ([Stability](#stability)).
 warningsAsErrors ? true; ... }` builds a Gleam project for the JavaScript target and runs its tests with
 Node. Its npm dependencies come from a separate npm derivation
 ([D6](#d6-composition)), whose `node_modules` it links as `nodeModules`. Its
-output is Gleam's JavaScript build tree without test modules or any package
-outside the runtime dependency closure, and it can be an image's `assets`. Local
+output is Gleam's JavaScript build tree without any package outside the runtime
+dependency closure and without any trace of the tests: their modules, their
+compiler metadata, or the entry modules `gleam test` generates, and it can be an image's `assets`. Local
 path dependencies build in place: the build records each one's `gleam.toml`
 fingerprint where Gleam looks for it, so Gleam does not resolve versions again
 offline. Git sources come through `sourceOverrides`, with their locked commits

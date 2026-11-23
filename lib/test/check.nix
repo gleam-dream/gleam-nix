@@ -94,6 +94,12 @@ let
       (previous: {
         pname = "${previous.pname}-test";
         inherit sourceRoot;
+        # The expected test modules are a separate, tiny output, so coverage
+        # reads them without realising the compile and its closure.
+        outputs = [
+          "out"
+          "modules"
+        ];
         nativeBuildInputs = previous.nativeBuildInputs ++ [ support ];
         postInstall = (previous.postInstall or "") + ''
           # The expected test modules come from the sources, never from a runner.
@@ -110,13 +116,12 @@ let
               esac
             done < <(find test -type f \( -name '*.gleam' -o -name '*.erl' \) | LC_ALL=C sort)
           fi
-          mkdir -p "$out/nix-support"
           erl -noshell -pa ${support}/ebin -eval 'gleam_nix_test:discover(init:get_plain_arguments()).' \
             -extra "$out"/${lib.escapeShellArg appDir}/ebin "''${gleamNixModules[@]}" \
-            > "$out/nix-support/gleam-nix-test-modules"
+            > "$modules"
         '';
       });
-  testModules = "${compiled}/nix-support/gleam-nix-test-modules";
+  testModules = "${compiled.modules}";
 
   serviceNames = map (service: service.name) services;
   repeatedServices = lib.attrNames (

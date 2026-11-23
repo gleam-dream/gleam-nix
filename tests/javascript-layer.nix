@@ -52,6 +52,10 @@ in
         node greet.mjs
         # Test code and development dependencies stay out of the assets.
         test ! -e ${frontend}/frontend/frontend_test.mjs
+        # No trace of the tests ships: no generated test entry, no test
+        # module's compiler metadata, nothing that imports a test module.
+        test -z "$(find ${frontend} -name '*@@*')"
+        ! grep -rl frontend_test ${frontend}
         test ! -e ${frontend}/gleeunit
         # So does gleam_stdlib, which only the development dependency needs.
         test ! -e ${frontend}/gleam_stdlib

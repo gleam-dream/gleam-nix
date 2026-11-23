@@ -89,6 +89,14 @@ let
   };
 
   failures = lib.runTests {
+    # Coverage needs only the reports and the expected module list, a separate
+    # output of the compile, so building it never realises the compile.
+    testCoverageNeedsOnlyTheModuleList = {
+      expr =
+        (builtins.getContext (gleam.mkCoverageCheck { checks = sharded; }).buildCommand)
+        .${builtins.unsafeDiscardStringContext default.compiled.drvPath}.outputs;
+      expected = [ "modules" ];
+    };
     testShardsShareOneCompile = {
       expr = lib.unique (map (check: check.compiled.drvPath) (sharded ++ [ default ]));
       expected = [ default.compiled.drvPath ];
@@ -186,10 +194,14 @@ let
 in
 {
   test-layer-evaluation =
-    assert failures == [ ];
-    pkgs.runCommand "gleam-nix-test-layer-evaluation" { } ''
-      touch "$out"
-    '';
+    lib.throwIf (failures != [ ])
+      "failing evaluation tests: ${builtins.toJSON (map (failure: failure.name) failures)}"
+      pkgs.runCommand
+      "gleam-nix-test-layer-evaluation"
+      { }
+      ''
+        touch "$out"
+      '';
 
   test-runner-default = default;
 

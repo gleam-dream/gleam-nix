@@ -151,9 +151,14 @@ else
           cp -RL build/dev/javascript "$out"
           chmod -R u+w "$out"
           rm -rf "$out/gleam.lock" ${lib.concatMapStringsSep " " (name: ''"$out"/${name}'') developmentOnly}
+          # Nothing of the tests ships: their modules, their compiler metadata,
+          # and the entry modules `gleam test` generates, named with "@@".
           for module in ${lib.escapeShellArgs testModules}; do
-            rm -f "$out/${config.name}/$module.mjs" "$out/${config.name}/$module.d.mts"
+            artefact=''${module//\//@}
+            rm -f "$out/${config.name}/$module.mjs" "$out/${config.name}/$module.d.mts" \
+              "$out/${config.name}/_gleam_artefacts/$artefact".cache*
           done
+          find "$out/${config.name}" -maxdepth 1 -name '*@@*' -delete
           runHook postInstall
         '';
 
