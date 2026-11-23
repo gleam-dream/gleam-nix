@@ -700,5 +700,12 @@ defines the per-ref scope that the GitHub Actions adapter declares.
   per job. A spike decides it, measuring query counts, throttling, bytes stored
   against the repository's cache allowance, and whether a fork's entries behave
   as documented.
-- **Whether hash sharding is fast enough.** Time per module, recorded from the
-  first adoption, tells. The fallback is the shard count or pinning a module.
+
+### Rulings
+
+- **Which gap existing CI tools leave** is settled in [D12](#d12-ci-commands):
+  staging, verification and the adapters' declared scopes.
+- **Hash sharding is kept until measured.** Each check's `report` records time
+  per module; the first adoption's reports decide. If shards are uneven, the
+  fallback is the shard count or pinning a module, not balancing by run time,
+  which stays a no-goal. Ruled by the owner.
