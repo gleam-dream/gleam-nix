@@ -102,6 +102,8 @@ jobs:
           name: gleam-nix-store-shared
           path: ${{ env.GLEAM_NIX_CI_LOCAL_STORE }}
           if-no-files-found: ignore
+          # The store is a hidden directory, which uploads skip by default.
+          include-hidden-files: true
 
   checks:
     needs: [plan, shared]
@@ -130,6 +132,8 @@ jobs:
           name: gleam-nix-store-${{ matrix.check }}
           path: ${{ env.GLEAM_NIX_CI_LOCAL_STORE }}
           if-no-files-found: ignore
+          # The store is a hidden directory, which uploads skip by default.
+          include-hidden-files: true
 
   external:
     needs: plan
@@ -157,6 +161,8 @@ jobs:
           name: gleam-nix-store-external-${{ matrix.job }}
           path: ${{ env.GLEAM_NIX_CI_LOCAL_STORE }}
           if-no-files-found: ignore
+          # The store is a hidden directory, which uploads skip by default.
+          include-hidden-files: true
 
   # The only job that decides the run. It ignores how the other jobs ended:
   # every declared result must substitute, so a skipped job never passes.
