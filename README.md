@@ -15,6 +15,29 @@ Use Gleam Nix to package Erlang applications with Nix, share compiled dependenci
 between projects, or compose Gleam with existing Erlang, Elixir and frontend builds.
 Nix owns local store reuse and sharing through configured binary caches.
 
+## Scope
+
+Today the library builds packages. Its [design](docs/design.md) also accepts
+four more modules on the same package graph. They aren't built yet:
+
+- **Test checks** compile a project's tests against its cached dependencies,
+  treat Gleam and Erlang warnings as errors, and run them through a replaceable
+  runner: the package's own test `main` by default, or shards. Checks can start
+  services such as PostgreSQL.
+- **Release and image** assemble a release and an OCI image from the dependency
+  outputs and compiler the tests used. This layer is unstable.
+- **JavaScript** builds and tests a Gleam frontend as a separate entry point.
+  This entry point is unstable.
+- **CI** is three vendor-neutral commands, `plan`, `build` and `verify`, so a
+  run builds only the checks whose inputs changed. The cache backend is a
+  replaceable adapter (GitHub Actions cache, Cachix, Attic, or a store local to
+  the run), and there's no default. Write access to a cache equals merge rights
+  on every repository that reads from it.
+
+The library doesn't resolve versions, deploy, support languages other than
+Gleam or targets other than Erlang and JavaScript, or run checks and images on
+Darwin.
+
 ## Capabilities
 
 - Build locked Hex and local Gleam packages independently.
@@ -120,9 +143,12 @@ backend on asset edits. Compiled Gleam dependencies remain independent either wa
 - Compiled Gleam dependencies must use the same Gleam and Erlang derivations.
   Select alternative toolchains through the scope's `overrideScope`.
 - `includeDev = true` compiles root development/test modules and includes their
-  dependencies. Run your test runner separately to execute them.
-- Flake outputs cover x86-64 Linux, ARM64 Linux and ARM64 macOS. Gleam compilation
-  to JavaScript, release assembly and cross compilation remain outside this library.
+  dependencies. Until the test module ships, run your test runner separately to
+  execute them.
+- Flake outputs cover x86-64 Linux, ARM64 Linux and ARM64 macOS. The designed
+  test checks and images are Linux only. Cross compilation stays outside this
+  library, and JavaScript compilation and release assembly wait on their
+  modules.
 
 ## Examples and reference
 
