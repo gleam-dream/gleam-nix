@@ -6,6 +6,7 @@
   beamPackages,
   readManifest,
   xxHash,
+  gleamSource,
 }:
 # Builds a Gleam project for the JavaScript target and runs its tests with
 # Node. It is a separate entry point: nothing in the Erlang graph depends on it.
@@ -45,6 +46,27 @@ let
   staged = builtins.filter (
     package: lib.hasPrefix "../" package.path || sourceOverrides ? ${package.name}
   ) local;
+  # Only what the build and tests read, as for an Erlang root: the project
+  # with its test code and each local package inside it, without READMEs,
+  # docs, agent documents or build output.
+  source =
+    if builtins.isPath src then
+      lib.fileset.toSource {
+        root = src;
+        fileset = lib.fileset.unions (
+          [
+            (gleamSource {
+              directory = src;
+              includeDev = true;
+            })
+          ]
+          ++ map (package: gleamSource { directory = src + "/${package.path}"; }) (
+            builtins.filter (package: !(lib.hasPrefix "../" package.path)) local
+          )
+        );
+      }
+    else
+      src;
   localSource =
     package:
     if sourceOverrides ? ${package.name} then
@@ -100,7 +122,8 @@ else
     // {
       pname = config.name;
       version = config.version or "0.1.0";
-      inherit src doCheck;
+      inherit doCheck;
+      src = source;
       nativeBuildInputs = [
         gleam
         nodejs

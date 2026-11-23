@@ -482,6 +482,12 @@ manifest `src` may carry, fails on warnings unless `warningsAsErrors = false`,
 and resolves links such as packages' `priv` directories in its output. Ordinary derivation attributes and
 hooks pass through.
 
+A frontend given as a local path contributes only what its build and tests
+read, as an Erlang root does ([D4](#d4-cache-identity)): `gleam.toml`,
+`manifest.toml`, `src`, `priv`, `include`, `test` and `dev`, and the same for
+each local package inside it, without agent documents. A README edit leaves
+the frontend cached.
+
 Hex sources are fetched as `importProject` fetches them, as separate
 derivations, and laid out where Gleam looks for downloaded packages, so one
 `gleam build` and `gleam test` per frontend run offline. Unlike the Erlang

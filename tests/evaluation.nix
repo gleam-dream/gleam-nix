@@ -405,6 +405,35 @@ lib.runTests {
     expr = refuses (frontend { manifest = ./manifests/javascript-git.toml; }).drvPath;
     expected = true;
   };
+  # Only what the frontend's build and tests read is an input: a README or an
+  # agent document edit leaves its derivation unchanged.
+  testJavascriptIgnoresDocumentation = {
+    expr =
+      map
+        (
+          name:
+          (gleam.buildJavascriptPackage {
+            src =
+              /.
+              + builtins.unsafeDiscardStringContext (
+                builtins.path {
+                  path = ./fixtures;
+                  name = "fixtures-without-${baseNameOf name}";
+                  filter = path: _: !(lib.hasSuffix name path);
+                }
+              )
+              + "/frontend";
+          }).drvPath
+        )
+        [
+          "frontend/README.md"
+          "frontend/AGENTS.md"
+        ];
+    expected = map (_: (frontend { }).drvPath) [
+      1
+      2
+    ];
+  };
   testJavascriptAcceptsGitWithOverride = {
     expr =
       refuses
