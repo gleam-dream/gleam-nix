@@ -248,7 +248,10 @@ in
   log.
 - **Results.** Each check writes `report`, one line per test module with its
   verdict, test count and milliseconds. The coverage check fails naming any
-  module that ran in no check or in several.
+  module that ran in no check or in several. Coverage reads the expected
+  modules from the shared compile's separate `modules` output, so a CI that
+  pushes the compile to a binary cache must push its `modules` output too, or
+  coverage rebuilds the compile.
 - **Sandbox.** Every VM a check starts loads a CA bundle.
 
 The test layer supports Gleam 1.19 and gleeunit; another compiler version fails
