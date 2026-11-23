@@ -2,7 +2,6 @@
   lib,
   dockerTools,
   busybox,
-  cacert,
   writeTextDir,
   runCommand,
   closureInfo,
@@ -30,7 +29,9 @@
 let
   home = "/home/${user}";
   owner = "${toString uid}:${toString gid}";
-  certificates = "${cacert}/etc/ssl/certs/ca-bundle.crt";
+  # The trust store at the system paths OTP reads, such as
+  # /etc/ssl/certs/ca-certificates.crt: Erlang never reads SSL_CERT_FILE.
+  certificates = "/etc/ssl/certs/ca-certificates.crt";
   accounts = [
     (writeTextDir "etc/passwd" ''
       root:x:0:0::/root:/bin/sh
@@ -44,7 +45,7 @@ let
   imageContents = [
     release
     busybox
-    cacert
+    dockerTools.caCertificates
   ]
   ++ contents
   ++ accounts

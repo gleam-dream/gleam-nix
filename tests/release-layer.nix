@@ -183,6 +183,39 @@ in
 
   # Starts the image's own entrypoint with its environment and waits for its
   # own health check, read from the image configuration.
+  # Erlang inside the image finds a CA trust store. OTP reads fixed system
+  # paths, never SSL_CERT_FILE, so the check runs the image's own Erlang in a
+  # root filesystem made of the image's layers, not in the build sandbox.
+  release-image-trust-store =
+    pkgs.runCommand "gleam-nix-release-image-trust-store"
+      {
+        nativeBuildInputs = [
+          pkgs.jq
+          pkgs.proot
+        ];
+      }
+      ''
+        mkdir image root
+        echo "unpacking the image"
+        tar -xzf ${image} -C image
+        for layer in $(jq -r '.[0].Layers[]' image/manifest.json); do
+          tar -xf "image/$layer" -C root
+        done
+        echo "starting Erlang in the image"
+        timeout 300 env -i PATH=/bin HOME=/tmp ${pkgs.proot}/bin/proot -r root -b /dev -b /proc -w / \
+          ${runtime}/bin/erl -noshell -eval '
+            try public_key:cacerts_get() of
+              Certificates when length(Certificates) > 0 ->
+                io:format("~b CA certificates~n", [length(Certificates)]),
+                halt(0)
+            catch
+              Class:Reason:Stack ->
+                io:format(standard_error, "no CA trust store: ~p:~p~n~p~n", [Class, Reason, Stack]),
+                halt(1)
+            end.'
+        touch "$out"
+      '';
+
   release-image-health =
     pkgs.runCommand "gleam-nix-release-image-health"
       {

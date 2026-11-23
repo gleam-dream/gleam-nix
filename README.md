@@ -285,7 +285,8 @@ gleam.buildImage {
 - `buildRelease` fails if any application the service starts needs one the
   runtime removed, naming both, and if a test module would ship.
   `bin/my_app` starts the root's `main` as `gleam run` does.
-- `buildImage` adds a non-root user, CA certificates, BusyBox for a shell and
+- `buildImage` adds a non-root user, CA certificates where Erlang looks for
+  them (`/etc/ssl/certs/ca-certificates.crt`), BusyBox for a shell and
   the health check's HTTP client, and an entrypoint. It fails if any file in
   its closure, binaries included, still names the untrimmed Erlang.
 - The user runs as UID and GID 1000 from its home; set `uid`, `gid` and
