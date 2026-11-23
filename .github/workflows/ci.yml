@@ -48,7 +48,9 @@ permissions:
 env:
   CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
   ATTIC_TOKEN: ${{ secrets.ATTIC_TOKEN }}
-  GLEAM_NIX_CI_LOCAL_STORE: ${{ github.workspace }}/../gleam-nix-store
+  # Inside the workspace: artifact paths may not climb out of it. Git flakes
+  # ignore it because it is untracked.
+  GLEAM_NIX_CI_LOCAL_STORE: ${{ github.workspace }}/.gleam-nix-store
 
 jobs:
   plan:

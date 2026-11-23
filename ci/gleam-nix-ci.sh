@@ -65,7 +65,12 @@ use_adapter() {
   fi
   if [ -n "$substituter" ]; then substituters+=("$substituter"); fi
   if [ -n "$LOCAL_STORE" ]; then
-    mkdir -p "$LOCAL_STORE"
+    # Create the store's layout as this user before the daemon opens it as a
+    # substituter; otherwise the daemon creates it as root and pushes fail.
+    mkdir -p "$LOCAL_STORE/nar"
+    if [ ! -f "$LOCAL_STORE/nix-cache-info" ]; then
+      printf 'StoreDir: /nix/store\n' > "$LOCAL_STORE/nix-cache-info"
+    fi
     substituters+=("file://$LOCAL_STORE?trusted=1")
   fi
   local config=""
@@ -182,14 +187,19 @@ case "$command" in
     if [ "$kind" = shared ]; then
       mapfile -t drvs < <(jq -r '.stages[] | select(.name == "shared") | .jobs[].drvs[]' "$target")
       [ "${#drvs[@]}" -gt 0 ] || { say "no shared builds planned."; exit 0; }
-      mapfile -t paths < <("$NIX" build --no-link --print-out-paths "${drvs[@]/%/^*}")
+      # The plan's derivations exist only where they were evaluated: evaluate
+      # the declaration here first, which writes them to this store.
+      metadata > /dev/null
+      built=$("$NIX" build --no-link --print-out-paths "${drvs[@]/%/^*}") || fail "shared builds failed."
+      mapfile -t paths <<< "$built"
       label="shared builds"
     else
       group=$kind
       if [ "$kind" = checks ] && [ "$(metadata | jq --arg n "$target" '.always | has($n)')" = true ]; then
         group=always
       fi
-      mapfile -t paths < <("$NIX" build --no-link --print-out-paths "$declaration.$group.$target")
+      built=$("$NIX" build --no-link --print-out-paths "$declaration.$group.$target") || fail "$target failed to build."
+      mapfile -t paths <<< "$built"
       label=$target
     fi
     seconds=$(($(date +%s) - started))

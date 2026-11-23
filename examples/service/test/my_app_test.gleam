@@ -1,4 +1,5 @@
 import gleeunit
+import my_app
 
 pub fn main() -> Nil {
   setup()
@@ -7,9 +8,12 @@ pub fn main() -> Nil {
 
 // Shared setup, such as migrations; the shard runner calls it as its hook.
 pub fn setup() -> Nil {
-  Nil
+  put("my_app", "ready")
 }
 
-pub fn main_test() {
-  assert Nil == Nil
+pub fn greeting_test() {
+  assert my_app.greeting() == "hello"
 }
+
+@external(erlang, "persistent_term", "put")
+fn put(key: String, value: String) -> Nil

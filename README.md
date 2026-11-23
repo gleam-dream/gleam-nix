@@ -31,7 +31,7 @@ Darwin.
 
 A service with a PostgreSQL test suite in four shards, a coverage check, an
 image, and CI on a Cachix cache. It is [the service example](examples/service/flake.nix),
-which the library's checks evaluate:
+which the library's checks build:
 
 ```nix
 {

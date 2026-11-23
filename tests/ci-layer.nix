@@ -67,6 +67,7 @@ let
         if [ "$offline" -eq 1 ]; then
           ! grep -qxF "$target" "$STUB/missing"
         else
+          if [ -f "$STUB/broken" ] && grep -qxF "$target" "$STUB/broken"; then exit 1; fi
           case "$target" in
             *.adapter) echo ${adapter} ;;
             *.checks.*) jq -r --arg n "''${target##*.}" '.checks[$n].out' ${meta} ;;
@@ -165,8 +166,32 @@ in
     "$ci" build .#ci --check shard-2 2> log
     grep -Fx ${byAttr.shard-2.out} "$STUB/copied"
     test ! -e "$STUB/pushed"
+    # The store's layout exists before the daemon opens it as a substituter.
+    test -d "$TMPDIR/local/nar"
+    grep -Fx 'StoreDir: /nix/store' "$TMPDIR/local/nix-cache-info"
     grep -Fx 'degraded=true' "$GITHUB_OUTPUT"
     grep -F "file://$TMPDIR/local?trusted=1" "$STUB/calls" || true
+  '';
+
+  # A failed build fails its job, before anything is pushed.
+  ci-build-failure = run "build-failure" ''
+    export FIXTURE_TOKEN=secret
+    echo .#ci.checks.shard-1 > "$STUB/broken"
+    if "$ci" build .#ci --check shard-1 2> log; then
+      echo "build passed with a failing check" >&2
+      exit 1
+    fi
+    grep -F 'shard-1 failed to build.' log
+    test ! -e "$STUB/pushed"
+    "$ci" plan .#ci --out plan.json > /dev/null 2>&1
+    echo '/nix/store/s7z5kmfaxbim0xv1zvqcjf2nvcj15pv6-fixture-compile-0.1.0.drv^*' > "$STUB/broken"
+    if "$ci" build .#ci --shared plan.json 2> log; then
+      echo "shared builds passed while failing" >&2
+      exit 1
+    fi
+    grep -F 'shared builds failed.' log
+    # The declaration is evaluated first, so the plan's derivations exist.
+    grep -q '^eval --json .#ci' "$STUB/calls"
   '';
 
   ci-verify-missing = run "verify-missing" ''

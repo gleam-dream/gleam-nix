@@ -63,14 +63,15 @@
           exampleShell = quickstart.devShells.${system}.default;
         }
         // nixpkgs.lib.optionalAttrs (system == "x86_64-linux") {
-          # Every declared result of the README's service evaluates.
+          # Every declared result of the README's service builds: its shards
+          # against PostgreSQL, the image, and coverage.
           service-example =
             let
               declaration = service.ci.${system};
               results = declaration.checks // declaration.derived;
             in
             pkgs.writeText "gleam-nix-service-example" (
-              builtins.concatStringsSep "\n" (map (check: check.drvPath) (builtins.attrValues results))
+              builtins.concatStringsSep "\n" (map (check: check.outPath) (builtins.attrValues results))
             );
         }
       );
